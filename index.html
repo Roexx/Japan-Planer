@@ -694,6 +694,18 @@ function initGoogleMap(){
   mapInstance.addListener('zoom_changed', updateGoogleLabels);
 }
 
+const PLACE_FLYTO_ZOOM = 16;
+
+function flyToPlace(p){
+  if(p.lat==null || p.lng==null || !mapInstance) return;
+  lastMapView = { lat:p.lat, lng:p.lng, zoom:PLACE_FLYTO_ZOOM };
+  if(mapEngine==='google'){ mapInstance.panTo({lat:p.lat, lng:p.lng}); mapInstance.setZoom(PLACE_FLYTO_ZOOM); }
+  else if(mapEngine==='leaflet') mapInstance.flyTo([p.lat, p.lng], PLACE_FLYTO_ZOOM);
+  else if(mapEngine==='maptiler') mapInstance.flyTo({ center:[p.lng, p.lat], zoom:PLACE_FLYTO_ZOOM });
+  const mapEl = document.getElementById('leafletMap');
+  if(mapEl) mapEl.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
 function markerStyle(nb, activeNbIds){
   const hasContent = state.places.some(p=>p.neighborhoodId===nb.id);
   const isSelected = state.filters.nb.includes(nb.id);
@@ -864,6 +876,7 @@ function renderPlaceCard(p){
       ${p.notes ? `<div class="place-notes">${esc(p.notes)}</div>` : ''}
       <div class="place-actions">
         <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name + ', Tokyo, Japan')}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;font-size:11px;">In Google Maps öffnen</a>
+        ${(p.lat!=null && p.lng!=null) ? `<button data-action="fly-place" data-id="${p.id}">📍 Auf Karte zeigen</button>` : ''}
         <button data-action="edit-place" data-id="${p.id}">Bearbeiten</button>
         <button data-action="delete-place" data-id="${p.id}">Löschen</button>
       </div>
@@ -888,6 +901,9 @@ function attachPlacesEvents(){
   };
   document.querySelectorAll('[data-action="toggle-place"]').forEach(el=>{
     el.onclick = ()=>{ const id = el.dataset.id; mutate(s=>{ const p = s.places.find(x=>x.id===id); if(p) p.done = !p.done; }); };
+  });
+  document.querySelectorAll('[data-action="fly-place"]').forEach(el=>{
+    el.onclick = ()=>{ const p = state.places.find(x=>x.id===el.dataset.id); if(p) flyToPlace(p); };
   });
   document.querySelectorAll('[data-action="delete-place"]').forEach(el=>{
     el.onclick = ()=>{ const id = el.dataset.id; if(confirm('Diesen Ort löschen?')) mutate(s=>{ s.places = s.places.filter(p=>p.id!==id); }); };
