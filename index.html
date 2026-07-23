@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tokyo Trip Companion</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#12141c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tokyo Trip">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="stylesheet" href="https://cdn.maptiler.com/maptiler-sdk-js/latest/maptiler-sdk.css">
+<script src="https://cdn.maptiler.com/maptiler-sdk-js/latest/maptiler-sdk.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root{
+  --bg:#12141c;
+  --surface:#1b1e2b;
+  --surface-2:#242840;
+  --surface-3:#2c3150;
+  --border:#31364d;
+  --text:#eef0f6;
+  --text-muted:#8c90a8;
+  --text-dim:#5b5f78;
+  --accent:#a78bfa;
+  --accent-soft:rgba(167,139,250,0.16);
+  --cat-anime:#f2a531;
+  --cat-jdm:#e0374a;
+  --cat-history:#4f9bf0;
+  --cat-quiet:#3fbfa0;
+  --cat-view:#c084fc;
+  --cat-food:#e0954f;
+  --radius:14px;
+  --radius-sm:9px;
+}
+
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;}
+body{min-height:100vh;}
+.mono{font-family:'JetBrains Mono',monospace;}
+.display{font-family:'Oswald',sans-serif; text-transform:uppercase; letter-spacing:0.03em;}
+
+#app{max-width:480px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative;background:
+  radial-gradient(circle at 20% 0%, rgba(167,139,250,0.07), transparent 40%),
+  var(--bg);
+}
+
+.header{
+  padding:22px 18px 14px;
+  border-bottom:1px solid var(--border);
+  position:sticky;top:0;z-index:20;
+  background:rgba(18,20,28,0.92);
+  backdrop-filter:blur(8px);
+}
+.header-top{display:flex;justify-content:space-between;align-items:flex-start;}
+.header-title{
+  font-family:'Oswald',sans-serif;
+  font-size:22px;font-weight:600;
+  letter-spacing:0.04em;
+  text-transform:uppercase;
+  display:flex;align-items:center;gap:8px;
+}
+.header-title .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);flex-shrink:0;}
+.countdown{text-align:right;}
+.countdown .num{font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:700;color:var(--accent);line-height:1;}
+.countdown .label{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;}
+.header-sub{margin-top:6px;font-size:12px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;}
+
+.content{flex:1;padding:16px 16px 100px;overflow-y:auto;}
+.section-label{
+  font-family:'Oswald',sans-serif;font-size:13px;letter-spacing:0.12em;text-transform:uppercase;
+  color:var(--accent);margin:22px 0 10px;display:flex;align-items:center;gap:8px;
+}
+.section-label:first-child{margin-top:0;}
+.section-label::after{content:'';flex:1;height:1px;background:var(--border);}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px;}
+
+.field-row{display:flex;gap:10px;margin-bottom:10px;}
+.field{flex:1;margin-bottom:12px;}
+.field label{display:block;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;}
+.field input, .field textarea{
+  width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);
+  color:var(--text);padding:9px 10px;font-size:14px;font-family:'JetBrains Mono',monospace;
+}
+.field textarea{font-family:'Inter',sans-serif;resize:vertical;min-height:50px;}
+.field input:focus, .field textarea:focus{outline:none;border-color:var(--accent);}
+
+.trip-line{position:relative;padding-left:26px;margin:18px 0;}
+.trip-line::before{
+  content:'';position:absolute;left:9px;top:6px;bottom:6px;width:2px;
+  background:repeating-linear-gradient(var(--accent),var(--accent) 6px,transparent 6px,transparent 11px);
+}
+.trip-stop{position:relative;padding-bottom:20px;}
+.trip-stop:last-child{padding-bottom:0;}
+.trip-stop::before{
+  content:'';position:absolute;left:-26px;top:2px;width:11px;height:11px;border-radius:50%;
+  background:var(--bg);border:2px solid var(--accent);
+}
+.trip-stop .t-date{font-family:'JetBrains Mono',monospace;color:var(--accent);font-size:12px;font-weight:700;}
+.trip-stop .t-desc{font-size:13px;color:var(--text-muted);margin-top:2px;}
+
+.progress-bar{height:6px;background:var(--surface-2);border-radius:4px;overflow:hidden;margin-bottom:14px;}
+.progress-fill{height:100%;background:var(--accent);transition:width 0.3s;}
+.progress-text{font-size:11px;color:var(--text-muted);margin-bottom:8px;font-family:'JetBrains Mono',monospace;}
+
+.check-item{display:flex;align-items:flex-start;gap:10px;padding:10px 4px;border-bottom:1px solid var(--border);}
+.check-item:last-child{border-bottom:none;}
+.checkbox{
+  width:20px;height:20px;border-radius:6px;border:2px solid var(--text-dim);flex-shrink:0;margin-top:1px;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all 0.15s;
+}
+.checkbox.done{background:var(--accent);border-color:var(--accent);}
+.checkbox svg{width:12px;height:12px;opacity:0;transition:opacity 0.15s;}
+.checkbox.done svg{opacity:1;}
+.check-text{flex:1;font-size:14px;line-height:1.4;cursor:pointer;}
+.check-item.done .check-text{color:var(--text-dim);text-decoration:line-through;}
+.del-btn{background:none;border:none;color:var(--text-dim);cursor:pointer;padding:2px 6px;font-size:16px;flex-shrink:0;}
+.del-btn:hover{color:var(--cat-jdm);}
+
+.add-row{display:flex;gap:8px;margin-top:12px;}
+.add-row input{flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:10px 12px;font-size:14px;}
+.add-row input:focus{outline:none;border-color:var(--accent);}
+.add-btn{background:var(--accent);color:#12141c;border:none;border-radius:var(--radius-sm);padding:0 16px;font-weight:600;font-size:14px;cursor:pointer;flex-shrink:0;}
+.add-btn:active{transform:scale(0.97);}
+
+.map-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:8px;margin-bottom:14px;position:relative;}
+#leafletMap{width:100%;height:360px;border-radius:10px;background:#1a1c24;}
+.leaflet-tooltip.map-label{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;padding:3px 8px;box-shadow:none;}
+.leaflet-tooltip{background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border);font-family:'Inter',sans-serif;font-size:11px;border-radius:6px;}
+.leaflet-tooltip-top.map-label:before{border-top-color:var(--border);}
+.leaflet-control-zoom a{background:var(--surface-2)!important;color:var(--text)!important;border-color:var(--border)!important;}
+.leaflet-control-zoom a:hover{background:var(--surface-3)!important;}
+.leaflet-control-attribution{background:rgba(27,30,43,0.85)!important;color:var(--text-dim)!important;font-size:9px!important;}
+.leaflet-control-attribution a{color:var(--text-muted)!important;}
+.map-hint{font-size:11px;color:var(--text-dim);margin:-6px 0 12px;}
+.maplibregl-ctrl-group{background:var(--surface-2)!important;border:1px solid var(--border)!important;}
+.maplibregl-ctrl-group button{background:var(--surface-2)!important;}
+.maplibregl-ctrl-group button:hover{background:var(--surface-3)!important;}
+.maplibregl-ctrl-attrib{background:rgba(27,30,43,0.85)!important;color:var(--text-dim)!important;font-size:9px!important;}
+.maplibregl-ctrl-attrib a{color:var(--text-muted)!important;}
+.gmap-marker-label{ text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff, 0 1px 2px #fff; }
+
+.chip-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
+.chip{padding:6px 12px;border-radius:20px;font-size:12px;border:1px solid var(--border);background:var(--surface);color:var(--text-muted);cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:5px;white-space:nowrap;}
+.chip .cdot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.chip.active{background:var(--surface-2);color:var(--text);border-color:currentColor;}
+.chip.reset{color:var(--text-dim);font-style:italic;}
+
+.place-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px;}
+.place-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+.place-name{font-size:14px;font-weight:600;cursor:pointer;}
+.place-card.done .place-name{color:var(--text-dim);text-decoration:line-through;}
+.place-loc{font-size:11px;color:var(--text-muted);margin-top:2px;font-family:'JetBrains Mono',monospace;}
+.place-cats{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;}
+.tag{font-size:10px;padding:3px 8px;border-radius:10px;color:#12141c;font-weight:600;}
+.place-notes{font-size:12px;color:var(--text-muted);margin-top:8px;line-height:1.4;font-style:italic;}
+.place-actions{display:flex;gap:10px;margin-top:8px;}
+.place-actions button{background:none;border:none;color:var(--text-dim);font-size:11px;cursor:pointer;padding:0;text-decoration:underline;}
+
+.fab{position:fixed;bottom:82px;right:calc(50% - 240px + 18px);width:52px;height:52px;border-radius:50%;background:var(--accent);color:#12141c;border:none;font-size:26px;box-shadow:0 4px 16px rgba(0,0,0,0.4);cursor:pointer;z-index:25;display:flex;align-items:center;justify-content:center;}
+@media (max-width:480px){.fab{right:18px;}}
+.overlay{position:fixed;inset:0;background:rgba(10,11,16,0.75);z-index:50;display:flex;align-items:flex-end;justify-content:center;}
+.sheet{background:var(--surface);width:100%;max-width:480px;border-radius:20px 20px 0 0;padding:20px;max-height:85vh;overflow-y:auto;border-top:1px solid var(--border);}
+.sheet h3{margin:0 0 14px;font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:0.04em;font-size:17px;}
+.multi-select{display:flex;flex-wrap:wrap;gap:6px;}
+.pick{padding:7px 12px;border-radius:16px;font-size:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-muted);cursor:pointer;}
+.pick.picked{background:var(--surface-3);color:var(--text);border-color:var(--accent);}
+.sheet-actions{display:flex;gap:10px;margin-top:16px;}
+.btn-primary{flex:1;background:var(--accent);color:#12141c;border:none;border-radius:var(--radius-sm);padding:12px;font-weight:600;cursor:pointer;}
+.btn-ghost{flex:1;background:none;color:var(--text-muted);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;cursor:pointer;}
+.inline-add{display:flex;gap:6px;margin-top:8px;}
+.inline-add input{flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:7px 10px;font-size:12px;}
+.inline-add button{background:var(--surface-3);border:none;color:var(--text);border-radius:var(--radius-sm);padding:0 12px;cursor:pointer;font-size:16px;}
+
+.navbar{position:fixed;bottom:0;left:0;right:0;max-width:480px;margin:0 auto;background:rgba(27,30,43,0.95);backdrop-filter:blur(10px);border-top:1px solid var(--border);display:flex;z-index:20;}
+.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 0 10px;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:10px;font-family:'Oswald',sans-serif;letter-spacing:0.05em;text-transform:uppercase;}
+.nav-btn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;}
+.nav-btn.active{color:var(--accent);}
+
+.empty-state{text-align:center;padding:30px 20px;color:var(--text-dim);font-size:13px;}
+.reset-link{font-size:11px;color:var(--text-dim);text-decoration:underline;background:none;border:none;cursor:pointer;margin-top:20px;}
+::-webkit-scrollbar{width:0;height:0;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const CAT_COLORS = ['var(--cat-anime)','var(--cat-jdm)','var(--cat-history)','var(--cat-quiet)','var(--cat-view)','var(--cat-food)'];
+function uid(){ return Math.random().toString(36).slice(2,9); }
+
+function defaultState(){
+  return {
+    overview:{
+      hinflug:'',
+      ankunft:'',
+      rueckflug:'',
+      unterkunft:'',
+      naechte:'',
+      notizen:''
+    },
+    checklists:{
+      einreise:[],
+      packliste:[]
+    },
+    categories: [],
+    neighborhoods: [],
+    places: [],
+    filters:{cats:[], nb:[]},
+    settings:{ maptilerKey:'', googleMapsKey:'' },
+    activeTab:'overview'
+  };
+}
+
+let state = null;
+let saveTimer = null;
+
+const storageAdapter = {
+  async get(key){
+    if(typeof window.storage !== 'undefined' && window.storage){
+      try{ return await window.storage.get(key, false); }
+      catch(e){ /* fall through to localStorage */ }
+    }
+    try{
+      const raw = localStorage.getItem(key);
+      return raw==null ? null : { value: raw };
+    }catch(e){ console.error('localStorage-Lesefehler', e); return null; }
+  },
+  async set(key, value){
+    if(typeof window.storage !== 'undefined' && window.storage){
+      try{ return await window.storage.set(key, value, false); }
+      catch(e){ /* fall through to localStorage */ }
+    }
+    try{ localStorage.setItem(key, value); return { value }; }
+    catch(e){ console.error('localStorage-Schreibfehler', e); return null; }
+  }
+};
+
+function scheduleSave(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async ()=>{
+    try{ await storageAdapter.set('trip-state', JSON.stringify(state)); }
+    catch(e){ console.error('Speichern fehlgeschlagen', e); }
+  }, 250);
+}
+async function loadState(){
+  try{
+    const res = await storageAdapter.get('trip-state');
+    if(res && res.value){ state = JSON.parse(res.value); }
+    else { state = defaultState(); }
+  }catch(e){ state = defaultState(); }
+  if(!state.filters) state.filters = {cats:[],nb:[]};
+  if(!state.settings) state.settings = { maptilerKey:'', googleMapsKey:'' };
+  if(state.settings.googleMapsKey===undefined) state.settings.googleMapsKey = '';
+  if(!state.activeTab) state.activeTab = 'overview';
+  render();
+}
+function mutate(fn){ fn(state); scheduleSave(); render(); }
+function mutateSilent(fn){ fn(state); scheduleSave(); }
+
+const ICONS = {
+  overview:'<svg viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7m-9-9v18m4-10h4v10"/></svg>',
+  entry:'<svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>',
+  pack:'<svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M8 8V6a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>',
+  places:'<svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 21s7-6.5 7-11a7 7 0 10-14 0c0 4.5 7 11 7 11z"/></svg>',
+};
+
+function daysUntil(){
+  const target = new Date('2026-11-04T18:00:00');
+  const now = new Date();
+  return Math.ceil((target-now)/(1000*60*60*24));
+}
+
+function render(){
+  const app = document.getElementById('app');
+  const days = daysUntil();
+  app.innerHTML = `
+    <div class="header">
+      <div class="header-top">
+        <div>
+          <div class="header-title"><span class="dot"></span>Tokyo Trip</div>
+          <div class="header-sub">${state.overview.unterkunft}</div>
+        </div>
+        <div class="countdown">
+          <div class="num">${days>=0?days:0}</div>
+          <div class="label">${days>=0?'Tage bis Abflug':'Unterwegs'}</div>
+        </div>
+      </div>
+    </div>
+    <div class="content" id="content"></div>
+    <div class="navbar">
+      ${navBtn('overview','Reise')}
+      ${navBtn('entry','Einreise')}
+      ${navBtn('pack','Packen')}
+      ${navBtn('places','Orte')}
+    </div>
+  `;
+  renderTab();
+  attachShellEvents();
+}
+function navBtn(id,label){
+  const active = state.activeTab===id ? 'active' : '';
+  return `<button class="nav-btn ${active}" data-tab="${id}">${ICONS[id]}<span>${label}</span></button>`;
+}
+function attachShellEvents(){
+  document.querySelectorAll('.nav-btn').forEach(btn=>{ btn.onclick = ()=> mutate(s=> s.activeTab = btn.dataset.tab); });
+}
+function renderTab(){
+  const c = document.getElementById('content');
+  if(state.activeTab==='overview') c.innerHTML = renderOverview();
+  else if(state.activeTab==='entry') c.innerHTML = renderChecklist('einreise','Einreise-Checkliste');
+  else if(state.activeTab==='pack') c.innerHTML = renderChecklist('packliste','Packliste');
+  else if(state.activeTab==='places') c.innerHTML = renderPlaces();
+  attachTabEvents();
+}
+
+function renderOverview(){
+  const o = state.overview;
+  return `
+    <div class="section-label">Reisedaten</div>
+    <div class="trip-line">
+      <div class="trip-stop"><div class="t-date">${esc(o.hinflug)}</div><div class="t-desc">Hinflug</div></div>
+      <div class="trip-stop"><div class="t-date">${esc(o.ankunft)}</div><div class="t-desc">Ankunft Tokyo, Check-in Ebisu</div></div>
+      <div class="trip-stop"><div class="t-date">${esc(o.naechte)}</div><div class="t-desc">${esc(o.unterkunft)}</div></div>
+      <div class="trip-stop"><div class="t-date">${esc(o.rueckflug)}</div><div class="t-desc">Rückflug</div></div>
+    </div>
+    <div class="section-label">Details bearbeiten</div>
+    <div class="card">
+      ${field('hinflug','Hinflug', o.hinflug)}
+      ${field('ankunft','Ankunft', o.ankunft)}
+      ${field('rueckflug','Rückflug', o.rueckflug)}
+      ${field('unterkunft','Unterkunft', o.unterkunft)}
+      ${field('naechte','Nächte / Zeitraum', o.naechte)}
+      <div class="field"><label>Notizen</label><textarea data-field="notizen">${esc(o.notizen)}</textarea></div>
+    </div>
+    <div class="section-label">Karten-Einstellungen</div>
+    <div class="card">
+      <div class="field">
+        <label>Google Maps API-Key (bevorzugt, wenn vorhanden)</label>
+        <input type="text" id="googleKeyInput" value="${esc(state.settings.googleMapsKey||'')}" placeholder="Hier einfügen für echte Google-Maps-Karte">
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);line-height:1.5;margin-bottom:12px;">
+        Google-Cloud-Konto mit hinterlegter Kreditkarte nötig (Maps JavaScript API aktivieren). Erste 10.000 Kartenaufrufe/Monat kostenlos – für eine private Reise-App praktisch nie erreichbar.
+      </div>
+      <div class="field">
+        <label>MapTiler API-Key (Fallback, kein Google nötig)</label>
+        <input type="text" id="maptilerKeyInput" value="${esc(state.settings.maptilerKey||'')}" placeholder="Alternative ohne Kreditkarte">
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);line-height:1.5;">
+        Kostenlos &amp; ohne Kreditkarte auf <a href="https://cloud.maptiler.com/account/keys/" target="_blank" rel="noopener" style="color:var(--accent);">cloud.maptiler.com</a> registrieren. Wird nur genutzt, wenn kein Google-Key eingetragen ist. Ohne jeden Key läuft die Karte kostenlos über OpenStreetMap (japanische Kachel-Beschriftung).
+      </div>
+    </div>
+    <button class="reset-link" id="exportBtn" style="margin-right:16px;">Daten sichern (exportieren)</button>
+    <button class="reset-link" id="importBtn" style="margin-right:16px;">Daten wiederherstellen (importieren)</button>
+    <button class="reset-link" id="resetBtn">Alle App-Daten zurücksetzen</button>
+  `;
+}
+function field(key,label,val){ return `<div class="field"><label>${label}</label><input type="text" data-field="${key}" value="${esc(val)}"></div>`; }
+function attachOverviewEvents(){
+  document.querySelectorAll('[data-field]').forEach(el=>{
+    el.addEventListener('input', ()=>{ mutateSilent(s=> s.overview[el.dataset.field] = el.value); });
+  });
+  const keyInput = document.getElementById('maptilerKeyInput');
+  if(keyInput) keyInput.addEventListener('input', ()=>{ mutateSilent(s=>{ if(!s.settings) s.settings={}; s.settings.maptilerKey = keyInput.value.trim(); }); });
+  const googleKeyInput = document.getElementById('googleKeyInput');
+  if(googleKeyInput) googleKeyInput.addEventListener('input', ()=>{ mutateSilent(s=>{ if(!s.settings) s.settings={}; s.settings.googleMapsKey = googleKeyInput.value.trim(); }); });
+  const resetBtn = document.getElementById('resetBtn');
+  if(resetBtn) resetBtn.onclick = ()=>{
+    if(confirm('Wirklich alle Daten zurücksetzen? Das kann nicht rückgängig gemacht werden.')){
+      mutate(s=>{ Object.assign(s, defaultState()); s.activeTab='overview'; });
+    }
+  };
+  const exportBtn = document.getElementById('exportBtn');
+  if(exportBtn) exportBtn.onclick = openExportSheet;
+  const importBtn = document.getElementById('importBtn');
+  if(importBtn) importBtn.onclick = openImportSheet;
+}
+
+function openExportSheet(){
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay'; overlay.id = 'backupOverlay';
+  const json = JSON.stringify(state, null, 2);
+  overlay.innerHTML = `
+    <div class="sheet">
+      <h3>Daten sichern</h3>
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.5;margin-bottom:10px;">
+        Kopier den Text unten und speicher ihn irgendwo sicher (z.B. Notizen-App). Damit kannst du deine Daten jederzeit wiederherstellen, egal was sich am Code ändert.
+      </div>
+      <textarea id="exportText" readonly style="width:100%;height:220px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:10px;font-size:11px;font-family:'JetBrains Mono',monospace;">${esc(json)}</textarea>
+      <div class="sheet-actions">
+        <button class="btn-ghost" id="backup-close">Schließen</button>
+        <button class="btn-primary" id="backup-copy">In Zwischenablage kopieren</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('backup-close').onclick = ()=> overlay.remove();
+  document.getElementById('backup-copy').onclick = async ()=>{
+    const textarea = document.getElementById('exportText');
+    try{
+      await navigator.clipboard.writeText(textarea.value);
+      const btn = document.getElementById('backup-copy');
+      btn.textContent = 'Kopiert!';
+      setTimeout(()=>{ btn.textContent = 'In Zwischenablage kopieren'; }, 1500);
+    }catch(e){
+      textarea.select();
+      document.execCommand('copy');
+    }
+  };
+}
+
+function openImportSheet(){
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay'; overlay.id = 'backupOverlay';
+  overlay.innerHTML = `
+    <div class="sheet">
+      <h3>Daten wiederherstellen</h3>
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.5;margin-bottom:10px;">
+        Füg hier den zuvor gesicherten Text komplett ein. Achtung: das überschreibt alle aktuellen Daten in der App.
+      </div>
+      <textarea id="importText" placeholder="Gesicherten Text hier einfügen…" style="width:100%;height:220px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:10px;font-size:11px;font-family:'JetBrains Mono',monospace;"></textarea>
+      <div id="importError" style="font-size:12px;color:var(--cat-jdm);margin-top:6px;"></div>
+      <div class="sheet-actions">
+        <button class="btn-ghost" id="import-close">Abbrechen</button>
+        <button class="btn-primary" id="import-confirm">Wiederherstellen</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('import-close').onclick = ()=> overlay.remove();
+  document.getElementById('import-confirm').onclick = ()=>{
+    const raw = document.getElementById('importText').value.trim();
+    const errEl = document.getElementById('importError');
+    if(!raw){ errEl.textContent = 'Bitte zuerst Text einfügen.'; return; }
+    let parsed;
+    try{ parsed = JSON.parse(raw); }
+    catch(e){ errEl.textContent = 'Das sieht nicht nach einer gültigen Sicherung aus (JSON-Fehler).'; return; }
+    if(!parsed || !parsed.checklists || !parsed.places || !parsed.neighborhoods){
+      errEl.textContent = 'Das sieht nicht nach einer vollständigen Sicherung dieser App aus.';
+      return;
+    }
+    if(!confirm('Aktuelle Daten in der App wirklich mit dieser Sicherung überschreiben?')) return;
+    mutate(s=>{ Object.assign(s, parsed); s.activeTab='overview'; });
+    overlay.remove();
+  };
+}
+
+function renderChecklist(key, title){
+  const items = state.checklists[key];
+  const done = items.filter(i=>i.done).length;
+  const pct = items.length? Math.round(done/items.length*100) : 0;
+  return `
+    <div class="section-label">${title}</div>
+    <div class="progress-text">${done} / ${items.length} erledigt</div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+    <div class="card" style="padding:4px 14px;">
+      ${items.map(it=>`
+        <div class="check-item ${it.done?'done':''}" data-id="${it.id}">
+          <div class="checkbox ${it.done?'done':''}" data-action="toggle" data-key="${key}" data-id="${it.id}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#12141c" stroke-width="3"><path d="M4 12l6 6L20 6"/></svg>
+          </div>
+          <div class="check-text" data-action="toggle" data-key="${key}" data-id="${it.id}">${esc(it.text)}</div>
+          <button class="del-btn" data-action="delete" data-key="${key}" data-id="${it.id}">×</button>
+        </div>
+      `).join('') || '<div class="empty-state">Noch keine Einträge.</div>'}
+    </div>
+    <div class="add-row">
+      <input type="text" id="newItemInput" placeholder="Neuen Punkt hinzufügen…">
+      <button class="add-btn" id="addItemBtn" data-key="${key}">+</button>
+    </div>
+  `;
+}
+function attachChecklistEvents(){
+  document.querySelectorAll('[data-action="toggle"]').forEach(el=>{
+    el.onclick = ()=>{
+      const key = el.dataset.key, id = el.dataset.id;
+      mutate(s=>{ const item = s.checklists[key].find(i=>i.id===id); if(item) item.done = !item.done; });
+    };
+  });
+  document.querySelectorAll('[data-action="delete"]').forEach(el=>{
+    el.onclick = ()=>{
+      const key = el.dataset.key, id = el.dataset.id;
+      mutate(s=>{ s.checklists[key] = s.checklists[key].filter(i=>i.id!==id); });
+    };
+  });
+  const addBtn = document.getElementById('addItemBtn');
+  if(addBtn){
+    const doAdd = ()=>{
+      const input = document.getElementById('newItemInput');
+      const val = input.value.trim();
+      if(!val) return;
+      const key = addBtn.dataset.key;
+      mutate(s=>{ s.checklists[key].push({id:uid(), text:val, done:false}); });
+    };
+    addBtn.onclick = doAdd;
+    document.getElementById('newItemInput').addEventListener('keydown', e=>{ if(e.key==='Enter') doAdd(); });
+  }
+}
+
+function getNb(id){ return state.neighborhoods.find(n=>n.id===id); }
+function getCat(id){ return state.categories.find(c=>c.id===id); }
+
+let mapInstance = null;
+let mapEngine = null; // 'google' | 'maptiler' | 'leaflet'
+let lastMapView = { lat:35.681, lng:139.767, zoom:11 };
+let googleMapsLoadPromise = null;
+
+function loadGoogleMaps(key){
+  if(window.google && window.google.maps) return Promise.resolve();
+  if(googleMapsLoadPromise) return googleMapsLoadPromise;
+  googleMapsLoadPromise = new Promise((resolve, reject)=>{
+    window.__initGoogleMapsCb = ()=> resolve();
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&language=de&region=JP&callback=__initGoogleMapsCb`;
+    script.async = true;
+    script.onerror = ()=>{ googleMapsLoadPromise = null; reject(new Error('Google Maps Skript konnte nicht geladen werden')); };
+    document.head.appendChild(script);
+  });
+  return googleMapsLoadPromise;
+}
+
+function destroyMap(){
+  if(mapInstance){
+    try{
+      if(mapEngine==='google'){
+        const c = mapInstance.getCenter();
+        lastMapView = { lat:c.lat(), lng:c.lng(), zoom: mapInstance.getZoom() };
+      } else {
+        const c = mapInstance.getCenter();
+        lastMapView = { lat:c.lat, lng:c.lng, zoom: mapInstance.getZoom() };
+        mapInstance.remove();
+      }
+    }catch(e){}
+    mapInstance = null;
+  }
+  const container = document.getElementById('leafletMap');
+  if(container) container.innerHTML = '';
+}
+
+async function initMap(){
+  const container = document.getElementById('leafletMap');
+  if(!container) return;
+  destroyMap();
+  const gKey = state.settings && state.settings.googleMapsKey;
+  const mKey = state.settings && state.settings.maptilerKey;
+  if(gKey){
+    try{ await loadGoogleMaps(gKey); initGoogleMap(); return; }
+    catch(e){ console.error('Google Maps fehlgeschlagen, Fallback', e); }
+  }
+  if(mKey && typeof maptilersdk !== 'undefined'){
+    try{ initMaptilerMap(mKey); return; }
+    catch(e){ console.error('MapTiler-Karte fehlgeschlagen, Fallback auf OpenStreetMap', e); }
+  }
+  initLeafletFallback();
+}
+
+const GOOGLE_LABEL_ZOOM_THRESHOLD = 13;
+
+function initGoogleMap(){
+  mapEngine = 'google';
+  const container = document.getElementById('leafletMap');
+  mapInstance = new google.maps.Map(container, {
+    center: { lat:lastMapView.lat, lng:lastMapView.lng },
+    zoom: lastMapView.zoom,
+    disableDefaultUI: false,
+    streetViewControl: false,
+    mapTypeControl: false
+  });
+
+  const activeNbIds = new Set(state.places.filter(p=>{
+    if(state.filters.cats.length===0) return true;
+    return p.categoryIds.some(c=>state.filters.cats.includes(c));
+  }).map(p=>p.neighborhoodId));
+
+  const googleMarkers = [];
+
+  state.neighborhoods.forEach(nb=>{
+    if(nb.lat==null || nb.lng==null) return;
+    const st = markerStyle(nb, activeNbIds);
+    const labelText = (st.hasContent||st.isHome) ? (st.isHome? nb.name+' (Unterkunft)' : nb.name) : null;
+    const marker = new google.maps.Marker({
+      position: { lat:nb.lat, lng:nb.lng },
+      map: mapInstance,
+      title: nb.name,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: st.radius,
+        fillColor: st.fillColor,
+        fillOpacity: 0.9,
+        strokeColor: st.color,
+        strokeWeight: 2
+      }
+    });
+    marker.addListener('click', ()=>{
+      const idx = state.filters.nb.indexOf(nb.id);
+      if(idx>-1) state.filters.nb.splice(idx,1); else state.filters.nb.push(nb.id);
+      scheduleSave(); render();
+    });
+    if(labelText) googleMarkers.push({ marker, labelText });
+  });
+
+  const updateGoogleLabels = ()=>{
+    const zoomedIn = mapInstance.getZoom() >= GOOGLE_LABEL_ZOOM_THRESHOLD;
+    googleMarkers.forEach(({marker, labelText})=>{
+      marker.setLabel(zoomedIn ? {
+        text: labelText,
+        color: '#1a1a2e',
+        fontSize: '11px',
+        fontWeight: '700',
+        className: 'gmap-marker-label'
+      } : null);
+    });
+  };
+  updateGoogleLabels();
+  mapInstance.addListener('zoom_changed', updateGoogleLabels);
+}
+
+function markerStyle(nb, activeNbIds){
+  const hasContent = state.places.some(p=>p.neighborhoodId===nb.id);
+  const isSelected = state.filters.nb.includes(nb.id);
+  const isHome = nb.id==='ebisu';
+  const isMatch = activeNbIds.has(nb.id);
+  let color='#5b5f78', fillColor='#2c3150', radius=hasContent?7:4;
+  if(isHome){ color='#e0374a'; fillColor='#e0374a'; radius=9; }
+  else if(isSelected){ color='#a78bfa'; fillColor='#a78bfa'; radius=9; }
+  else if(isMatch && hasContent){ color='#a78bfa'; fillColor='rgba(167,139,250,0.35)'; }
+  return { hasContent, isHome, color, fillColor, radius };
+}
+
+function initLeafletFallback(){
+  mapEngine = 'leaflet';
+  mapInstance = L.map('leafletMap', { zoomControl:true, attributionControl:true }).setView([lastMapView.lat, lastMapView.lng], lastMapView.zoom);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom:19, attribution:'&copy; OpenStreetMap contributors'
+  }).addTo(mapInstance);
+
+  const activeNbIds = new Set(state.places.filter(p=>{
+    if(state.filters.cats.length===0) return true;
+    return p.categoryIds.some(c=>state.filters.cats.includes(c));
+  }).map(p=>p.neighborhoodId));
+
+  state.neighborhoods.forEach(nb=>{
+    if(nb.lat==null || nb.lng==null) return;
+    const st = markerStyle(nb, activeNbIds);
+    const marker = L.circleMarker([nb.lat, nb.lng], { radius:st.radius, color:st.color, weight:2, fillColor:st.fillColor, fillOpacity:0.85 }).addTo(mapInstance);
+    if(st.hasContent || st.isHome){
+      marker.bindTooltip(st.isHome? nb.name+' (Unterkunft)' : nb.name, { permanent:true, direction:'top', offset:[0,-6], className:'map-label' });
+    } else {
+      marker.bindTooltip(nb.name, { direction:'top' });
+    }
+    marker.on('click', ()=>{
+      const idx = state.filters.nb.indexOf(nb.id);
+      if(idx>-1) state.filters.nb.splice(idx,1); else state.filters.nb.push(nb.id);
+      scheduleSave(); render();
+    });
+  });
+}
+
+function applyBilingualLabels(map){
+  try{
+    const style = map.getStyle();
+    if(!style || !style.layers) return;
+    style.layers.forEach(layer=>{
+      if(layer.type==='symbol' && layer.layout && layer.layout['text-field']){
+        try{
+          map.setLayoutProperty(layer.id, 'text-field', [
+            'format',
+            ['coalesce', ['get','name:latin'], ['get','name:en'], ['get','name']], {},
+            '\n', {},
+            ['case',
+              ['all', ['has','name'],
+                ['!=', ['get','name'], ['coalesce', ['get','name:latin'], ['get','name:en'], ['get','name']]]
+              ],
+              ['get','name'],
+              ''
+            ],
+            { 'font-scale': 0.82 }
+          ]);
+        }catch(e){ /* layer doesn't support this expression shape, skip it */ }
+      }
+    });
+  }catch(e){ console.error('Zweisprachige Labels fehlgeschlagen', e); }
+}
+
+function initMaptilerMap(key){
+  mapEngine = 'maptiler';
+  maptilersdk.config.apiKey = key;
+  mapInstance = new maptilersdk.Map({
+    container: 'leafletMap',
+    style: maptilersdk.MapStyle.STREETS,
+    center: [lastMapView.lng, lastMapView.lat],
+    zoom: lastMapView.zoom,
+    language: maptilersdk.Language.LOCAL,
+    navigationControl: true,
+    geolocateControl: false
+  });
+
+  const activeNbIds = new Set(state.places.filter(p=>{
+    if(state.filters.cats.length===0) return true;
+    return p.categoryIds.some(c=>state.filters.cats.includes(c));
+  }).map(p=>p.neighborhoodId));
+
+  mapInstance.on('load', ()=>{
+    applyBilingualLabels(mapInstance);
+    state.neighborhoods.forEach(nb=>{
+      if(nb.lat==null || nb.lng==null) return;
+      const st = markerStyle(nb, activeNbIds);
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;';
+      const dot = document.createElement('div');
+      dot.style.cssText = `width:${st.radius*2}px;height:${st.radius*2}px;border-radius:50%;background:${st.fillColor};border:2px solid ${st.color};box-shadow:0 1px 4px rgba(0,0,0,0.4);`;
+      wrap.appendChild(dot);
+      if(st.hasContent || st.isHome){
+        const label = document.createElement('div');
+        label.textContent = st.isHome ? nb.name+' (Unterkunft)' : nb.name;
+        label.style.cssText = 'background:#1b1e2b;color:#eef0f6;border:1px solid #31364d;border-radius:6px;font-size:11px;font-weight:600;padding:2px 7px;white-space:nowrap;font-family:Inter,sans-serif;';
+        wrap.appendChild(label);
+      } else {
+        wrap.title = nb.name;
+      }
+      const marker = new maptilersdk.Marker({ element:wrap, anchor:'center' }).setLngLat([nb.lng, nb.lat]).addTo(mapInstance);
+      wrap.addEventListener('click', ()=>{
+        const idx = state.filters.nb.indexOf(nb.id);
+        if(idx>-1) state.filters.nb.splice(idx,1); else state.filters.nb.push(nb.id);
+        scheduleSave(); render();
+      });
+    });
+  });
+}
+function renderPlaces(){
+  const filtered = state.places.filter(p=>{
+    const catOk = state.filters.cats.length===0 || p.categoryIds.some(c=>state.filters.cats.includes(c));
+    const nbOk = state.filters.nb.length===0 || state.filters.nb.includes(p.neighborhoodId);
+    return catOk && nbOk;
+  });
+  const nbChips = [...new Set(state.places.map(p=>p.neighborhoodId))].map(id=>getNb(id)).filter(Boolean).sort((a,b)=>a.name.localeCompare(b.name));
+  return `
+    <div class="section-label">Karte</div>
+    <div class="map-wrap"><div id="leafletMap"></div></div>
+    <div class="map-hint">Tippen &amp; ziehen zum Verschieben, Pinch/+/– zum Zoomen. Marker antippen filtert die Liste.</div>
+    <div class="section-label">Kategorien</div>
+    <div class="chip-row" id="catChips">
+      ${state.filters.cats.length>0 ? `<div class="chip reset" data-reset="cats">Zurücksetzen</div>` : ''}
+      ${state.categories.map(c=>`
+        <div class="chip ${state.filters.cats.includes(c.id)?'active':''}" data-cat="${c.id}" style="color:${state.filters.cats.includes(c.id)?c.color:''}">
+          <span class="cdot" style="background:${c.color}"></span>${esc(c.name)}
+        </div>
+      `).join('')}
+      <div class="chip" id="addCatChip" style="border-style:dashed;">+ Kategorie</div>
+    </div>
+    <div class="section-label">Stadtteile</div>
+    <div class="chip-row" id="nbChips">
+      ${state.filters.nb.length>0 ? `<div class="chip reset" data-reset="nb">Zurücksetzen</div>` : ''}
+      ${nbChips.map(nb=>`<div class="chip ${state.filters.nb.includes(nb.id)?'active':''}" data-nbchip="${nb.id}">${esc(nb.name)}</div>`).join('')}
+    </div>
+    <div class="section-label">Orte (${filtered.length})</div>
+    <div id="placeList">${filtered.map(p=>renderPlaceCard(p)).join('') || '<div class="empty-state">Keine Orte für diese Filter.</div>'}</div>
+  `;
+}
+function renderPlaceCard(p){
+  const nb = getNb(p.neighborhoodId);
+  return `
+    <div class="place-card ${p.done?'done':''}" data-place="${p.id}">
+      <div class="place-top">
+        <div style="flex:1">
+          <div class="place-name" data-action="toggle-place" data-id="${p.id}">${esc(p.name)}</div>
+          <div class="place-loc">${nb?esc(nb.name):''}</div>
+        </div>
+        <div class="checkbox ${p.done?'done':''}" data-action="toggle-place" data-id="${p.id}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#12141c" stroke-width="3"><path d="M4 12l6 6L20 6"/></svg>
+        </div>
+      </div>
+      <div class="place-cats">${p.categoryIds.map(cid=>{ const c=getCat(cid); return c?`<span class="tag" style="background:${c.color}">${esc(c.name)}</span>`:''; }).join('')}</div>
+      ${p.notes ? `<div class="place-notes">${esc(p.notes)}</div>` : ''}
+      <div class="place-actions">
+        <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name + ', Tokyo, Japan')}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;font-size:11px;">In Google Maps öffnen</a>
+        <button data-action="edit-place" data-id="${p.id}">Bearbeiten</button>
+        <button data-action="delete-place" data-id="${p.id}">Löschen</button>
+      </div>
+    </div>
+  `;
+}
+function attachPlacesEvents(){
+  document.querySelectorAll('[data-nb]').forEach(el=>{
+    el.onclick = ()=>{ const id = el.dataset.nb; mutate(s=>{ const idx = s.filters.nb.indexOf(id); if(idx>-1) s.filters.nb.splice(idx,1); else s.filters.nb.push(id); }); };
+  });
+  document.querySelectorAll('[data-nbchip]').forEach(el=>{
+    el.onclick = ()=>{ const id = el.dataset.nbchip; mutate(s=>{ const idx = s.filters.nb.indexOf(id); if(idx>-1) s.filters.nb.splice(idx,1); else s.filters.nb.push(id); }); };
+  });
+  document.querySelectorAll('[data-cat]').forEach(el=>{
+    el.onclick = ()=>{ const id = el.dataset.cat; mutate(s=>{ const idx = s.filters.cats.indexOf(id); if(idx>-1) s.filters.cats.splice(idx,1); else s.filters.cats.push(id); }); };
+  });
+  document.querySelectorAll('[data-reset]').forEach(el=>{ el.onclick = ()=> mutate(s=> s.filters[el.dataset.reset] = []); });
+  const addCatChip = document.getElementById('addCatChip');
+  if(addCatChip) addCatChip.onclick = ()=>{
+    const name = prompt('Name der neuen Kategorie:');
+    if(name && name.trim()){ mutate(s=>{ const color = CAT_COLORS[s.categories.length % CAT_COLORS.length]; s.categories.push({id:uid(), name:name.trim(), color}); }); }
+  };
+  document.querySelectorAll('[data-action="toggle-place"]').forEach(el=>{
+    el.onclick = ()=>{ const id = el.dataset.id; mutate(s=>{ const p = s.places.find(x=>x.id===id); if(p) p.done = !p.done; }); };
+  });
+  document.querySelectorAll('[data-action="delete-place"]').forEach(el=>{
+    el.onclick = ()=>{ const id = el.dataset.id; if(confirm('Diesen Ort löschen?')) mutate(s=>{ s.places = s.places.filter(p=>p.id!==id); }); };
+  });
+  document.querySelectorAll('[data-action="edit-place"]').forEach(el=>{ el.onclick = ()=> openPlaceForm(el.dataset.id); });
+  const fab = document.getElementById('fab');
+  if(fab) fab.onclick = ()=> openPlaceForm(null);
+  initMap();
+}
+
+let formTemp = null;
+function openPlaceForm(id){
+  const existing = id ? state.places.find(p=>p.id===id) : null;
+  formTemp = existing ? JSON.parse(JSON.stringify(existing)) : {id:null,name:'',neighborhoodId:(getNb('ebisu')||state.neighborhoods[0]||{}).id,categoryIds:[],notes:'',done:false};
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay'; overlay.id = 'formOverlay';
+  overlay.innerHTML = `
+    <div class="sheet">
+      <h3>${existing?'Ort bearbeiten':'Neuen Ort hinzufügen'}</h3>
+      <div class="field"><label>Name</label><input type="text" id="pf-name" value="${esc(formTemp.name)}" placeholder="z.B. Nakano Broadway"></div>
+      <div class="field">
+        <label>Stadtteil</label>
+        <div class="multi-select" id="pf-nb">
+          ${state.neighborhoods.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(nb=>`<div class="pick ${formTemp.neighborhoodId===nb.id?'picked':''}" data-nbpick="${nb.id}">${esc(nb.name)}</div>`).join('')}
+        </div>
+        <div class="inline-add"><input type="text" id="pf-newnb" placeholder="Neuer Stadtteil…"><button id="pf-addnb">+</button></div>
+      </div>
+      <div class="field">
+        <label>Kategorien</label>
+        <div class="multi-select" id="pf-cat">
+          ${state.categories.map(c=>`<div class="pick ${formTemp.categoryIds.includes(c.id)?'picked':''}" data-catpick="${c.id}" style="border-color:${formTemp.categoryIds.includes(c.id)?c.color:''}">${esc(c.name)}</div>`).join('')}
+        </div>
+        <div class="inline-add"><input type="text" id="pf-newcat" placeholder="Neue Kategorie…"><button id="pf-addcat">+</button></div>
+      </div>
+      <div class="field"><label>Notizen</label><textarea id="pf-notes" placeholder="Tipps, Öffnungszeiten, Links…">${esc(formTemp.notes)}</textarea></div>
+      <div class="sheet-actions"><button class="btn-ghost" id="pf-cancel">Abbrechen</button><button class="btn-primary" id="pf-save">Speichern</button></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('pf-name').oninput = e=> formTemp.name = e.target.value;
+  document.getElementById('pf-notes').oninput = e=> formTemp.notes = e.target.value;
+  overlay.querySelectorAll('[data-nbpick]').forEach(el=>{
+    el.onclick = ()=>{ formTemp.neighborhoodId = el.dataset.nbpick; overlay.querySelectorAll('[data-nbpick]').forEach(x=>x.classList.toggle('picked', x.dataset.nbpick===formTemp.neighborhoodId)); };
+  });
+  overlay.querySelectorAll('[data-catpick]').forEach(el=>{
+    el.onclick = ()=>{ const cid = el.dataset.catpick; const idx = formTemp.categoryIds.indexOf(cid); if(idx>-1) formTemp.categoryIds.splice(idx,1); else formTemp.categoryIds.push(cid); el.classList.toggle('picked', formTemp.categoryIds.includes(cid)); };
+  });
+  document.getElementById('pf-addnb').onclick = async ()=>{
+    const btn = document.getElementById('pf-addnb');
+    const input = document.getElementById('pf-newnb'); const name = input.value.trim(); if(!name) return;
+    const keepName = document.getElementById('pf-name').value, keepNotes = document.getElementById('pf-notes').value;
+    btn.textContent = '…'; btn.disabled = true;
+    let lat=null, lng=null;
+    try{
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(name+', Tokyo, Japan')}`);
+      const data = await res.json();
+      if(data && data[0]){ lat = parseFloat(data[0].lat); lng = parseFloat(data[0].lon); }
+    }catch(e){ console.error('Geocoding fehlgeschlagen', e); }
+    const newNb = {id:uid(), name, lat, lng};
+    state.neighborhoods.push(newNb); scheduleSave();
+    if(lat==null) alert(`"${name}" wurde hinzugefügt, aber die Position konnte nicht gefunden werden – erscheint nur in der Liste, nicht auf der Karte.`);
+    document.getElementById('formOverlay').remove();
+    openPlaceForm(existing?existing.id:null);
+    formTemp.name = keepName; formTemp.notes = keepNotes; formTemp.neighborhoodId = newNb.id;
+    document.getElementById('pf-name').value = keepName;
+    document.getElementById('pf-notes').value = keepNotes;
+  };
+  document.getElementById('pf-addcat').onclick = ()=>{
+    const input = document.getElementById('pf-newcat'); const name = input.value.trim(); if(!name) return;
+    const color = CAT_COLORS[state.categories.length % CAT_COLORS.length];
+    const newCat = {id:uid(), name, color};
+    state.categories.push(newCat); scheduleSave();
+    const keepName = document.getElementById('pf-name').value, keepNotes = document.getElementById('pf-notes').value;
+    formTemp.categoryIds.push(newCat.id); formTemp.name = keepName; formTemp.notes = keepNotes;
+    document.getElementById('formOverlay').remove();
+    openPlaceForm(existing?existing.id:null);
+    formTemp.name = keepName; formTemp.notes = keepNotes;
+    document.getElementById('pf-name').value = keepName;
+    document.getElementById('pf-notes').value = keepNotes;
+  };
+  document.getElementById('pf-cancel').onclick = ()=> overlay.remove();
+  document.getElementById('pf-save').onclick = ()=>{
+    if(!formTemp.name.trim()){ alert('Bitte einen Namen eingeben.'); return; }
+    mutate(s=>{
+      if(formTemp.id){ const idx = s.places.findIndex(p=>p.id===formTemp.id); s.places[idx] = formTemp; }
+      else { formTemp.id = uid(); s.places.push(formTemp); }
+    });
+    overlay.remove();
+  };
+}
+function esc(str){ if(str===undefined||str===null) return ''; return String(str).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function attachTabEvents(){
+  if(state.activeTab==='overview') attachOverviewEvents();
+  else if(state.activeTab==='entry'||state.activeTab==='pack') attachChecklistEvents();
+  else if(state.activeTab==='places'){
+    attachPlacesEvents();
+    if(!document.getElementById('fab')){
+      const fab = document.createElement('button');
+      fab.className='fab'; fab.id='fab'; fab.innerHTML='+';
+      document.getElementById('app').appendChild(fab);
+      fab.onclick = ()=> openPlaceForm(null);
+    }
+  }
+  const existingFab = document.getElementById('fab');
+  if(existingFab && state.activeTab!=='places') existingFab.remove();
+}
+loadState();
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(e=>console.error('Service Worker Registrierung fehlgeschlagen (nicht kritisch)', e));
+  });
+}
+
+</script>
+</body>
+</html>
