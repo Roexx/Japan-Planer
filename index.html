@@ -592,6 +592,44 @@ function filteredPlaces(){
   });
 }
 
+function haversineKm(lat1, lng1, lat2, lng2){
+  const R = 6371;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLng = (lng2-lng1) * Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+const NEARBY_NEIGHBORHOOD_KM = 5;
+
+async function reverseGeocodeName(lat, lng){
+  try{
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=14&accept-language=de`);
+    const data = await res.json();
+    const a = data && data.address;
+    if(!a) return null;
+    return a.suburb || a.neighbourhood || a.quarter || a.city_district || a.town || a.village || a.city || null;
+  }catch(e){ console.error('Reverse-Geocoding fehlgeschlagen', e); return null; }
+}
+
+async function resolveNeighborhoodForCoords(lat, lng){
+  let nearest=null, bestDist=Infinity;
+  state.neighborhoods.forEach(nb=>{
+    if(nb.lat==null || nb.lng==null) return;
+    const d = haversineKm(lat, lng, nb.lat, nb.lng);
+    if(d<bestDist){ bestDist=d; nearest=nb; }
+  });
+  if(nearest && bestDist<=NEARBY_NEIGHBORHOOD_KM) return { nb:nearest, created:false };
+
+  const name = await reverseGeocodeName(lat, lng);
+  if(!name) return null;
+  let nb = state.neighborhoods.find(n=>n.name.toLowerCase()===name.toLowerCase());
+  if(nb) return { nb, created:false };
+  nb = {id:uid(), name, lat, lng};
+  state.neighborhoods.push(nb); scheduleSave();
+  return { nb, created:true };
+}
+
 function initGoogleMap(){
   mapEngine = 'google';
   const container = document.getElementById('leafletMap');
@@ -897,27 +935,41 @@ function openPlaceForm(id){
   document.getElementById('pf-name').oninput = e=> formTemp.name = e.target.value;
   document.getElementById('pf-notes').oninput = e=> formTemp.notes = e.target.value;
   document.getElementById('pf-address').oninput = e=>{ formTemp.address = e.target.value; formTemp.lat = null; formTemp.lng = null; };
+  const refreshNbPicker = ()=>{
+    const container = document.getElementById('pf-nb');
+    if(!container) return;
+    container.innerHTML = state.neighborhoods.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(nb=>`<div class="pick ${formTemp.neighborhoodId===nb.id?'picked':''}" data-nbpick="${nb.id}">${esc(nb.name)}</div>`).join('');
+    container.querySelectorAll('[data-nbpick]').forEach(el=>{
+      el.onclick = ()=>{ formTemp.neighborhoodId = el.dataset.nbpick; container.querySelectorAll('[data-nbpick]').forEach(x=>x.classList.toggle('picked', x.dataset.nbpick===formTemp.neighborhoodId)); };
+    });
+  };
   document.getElementById('pf-geocode').onclick = async ()=>{
     const btn = document.getElementById('pf-geocode');
     const statusEl = document.getElementById('pf-geocode-status');
     const address = document.getElementById('pf-address').value.trim();
     if(!address){ statusEl.textContent = 'Bitte zuerst eine Adresse eingeben.'; return; }
-    const coordMatch = address.match(/^(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)$/);
-    if(coordMatch){
-      formTemp.lat = parseFloat(coordMatch[1]); formTemp.lng = parseFloat(coordMatch[2]);
-      statusEl.textContent = 'Koordinaten übernommen – erscheint als eigener Pin auf der Karte.';
-      return;
-    }
     btn.textContent = '…'; btn.disabled = true;
+    const coordMatch = address.match(/^(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)$/);
     const nb = getNb(formTemp.neighborhoodId);
-    const result = await geocodeQuery(`${address}, ${nb?nb.name+', ':''}Japan`);
-    btn.textContent = '📍'; btn.disabled = false;
-    if(result){
-      formTemp.lat = result.lat; formTemp.lng = result.lng;
-      statusEl.textContent = 'Position gefunden – erscheint als eigener Pin auf der Karte.';
-    } else {
+    const result = coordMatch
+      ? { lat: parseFloat(coordMatch[1]), lng: parseFloat(coordMatch[2]) }
+      : await geocodeQuery(`${address}, ${nb?nb.name+', ':''}Japan`);
+    if(!result){
       formTemp.lat = null; formTemp.lng = null;
       statusEl.textContent = 'Keine Position gefunden. Tipp: in Google Maps den Ort lange gedrückt halten, die angezeigten Koordinaten (z.B. "35.3039, 139.5140") kopieren und hier statt der Adresse einfügen.';
+      btn.textContent = '📍'; btn.disabled = false;
+      return;
+    }
+    formTemp.lat = result.lat; formTemp.lng = result.lng;
+    statusEl.textContent = 'Position gefunden, ermittle Stadtteil…';
+    const nbResult = await resolveNeighborhoodForCoords(result.lat, result.lng);
+    btn.textContent = '📍'; btn.disabled = false;
+    if(nbResult){
+      formTemp.neighborhoodId = nbResult.nb.id;
+      refreshNbPicker();
+      statusEl.textContent = `Position gefunden – Stadtteil "${nbResult.nb.name}"${nbResult.created?' (neu angelegt)':''} zugewiesen.`;
+    } else {
+      statusEl.textContent = 'Position gefunden – Stadtteil konnte nicht automatisch ermittelt werden, bitte manuell auswählen.';
     }
   };
   overlay.querySelectorAll('[data-nbpick]').forEach(el=>{
