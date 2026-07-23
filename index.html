@@ -377,6 +377,7 @@ function field(key,label,val){ return `<div class="field"><label>${label}</label
 function attachOverviewEvents(){
   document.querySelectorAll('[data-field]').forEach(el=>{
     el.addEventListener('input', ()=>{ mutateSilent(s=> s.overview[el.dataset.field] = el.value); });
+    el.addEventListener('change', ()=> render());
   });
   const keyInput = document.getElementById('maptilerKeyInput');
   if(keyInput) keyInput.addEventListener('input', ()=>{ mutateSilent(s=>{ if(!s.settings) s.settings={}; s.settings.maptilerKey = keyInput.value.trim(); }); });
