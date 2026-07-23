@@ -575,6 +575,23 @@ async function initMap(){
 
 const GOOGLE_LABEL_ZOOM_THRESHOLD = 13;
 
+async function geocodeQuery(query){
+  try{
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    if(data && data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  }catch(e){ console.error('Geocoding fehlgeschlagen', e); }
+  return null;
+}
+
+function filteredPlaces(){
+  return state.places.filter(p=>{
+    const catOk = state.filters.cats.length===0 || p.categoryIds.some(c=>state.filters.cats.includes(c));
+    const nbOk = state.filters.nb.length===0 || state.filters.nb.includes(p.neighborhoodId);
+    return catOk && nbOk;
+  });
+}
+
 function initGoogleMap(){
   mapEngine = 'google';
   const container = document.getElementById('leafletMap');
@@ -616,6 +633,11 @@ function initGoogleMap(){
       scheduleSave(); render();
     });
     if(labelText) googleMarkers.push({ marker, labelText });
+  });
+
+  filteredPlaces().forEach(p=>{
+    if(p.lat==null || p.lng==null) return;
+    new google.maps.Marker({ position:{lat:p.lat, lng:p.lng}, map:mapInstance, title:p.name });
   });
 
   const updateGoogleLabels = ()=>{
@@ -672,6 +694,13 @@ function initLeafletFallback(){
       if(idx>-1) state.filters.nb.splice(idx,1); else state.filters.nb.push(nb.id);
       scheduleSave(); render();
     });
+  });
+
+  filteredPlaces().forEach(p=>{
+    if(p.lat==null || p.lng==null) return;
+    L.circleMarker([p.lat, p.lng], { radius:6, color:'#eef0f6', weight:2, fillColor:'#a78bfa', fillOpacity:0.95 })
+      .addTo(mapInstance)
+      .bindTooltip(esc(p.name), { permanent:true, direction:'right', offset:[6,0], className:'map-label' });
   });
 }
 
@@ -744,14 +773,18 @@ function initMaptilerMap(key){
         scheduleSave(); render();
       });
     });
+
+    filteredPlaces().forEach(p=>{
+      if(p.lat==null || p.lng==null) return;
+      new maptilersdk.Marker({ color:'#a78bfa' })
+        .setLngLat([p.lng, p.lat])
+        .setPopup(new maptilersdk.Popup({ offset:16 }).setText(p.name))
+        .addTo(mapInstance);
+    });
   });
 }
 function renderPlaces(){
-  const filtered = state.places.filter(p=>{
-    const catOk = state.filters.cats.length===0 || p.categoryIds.some(c=>state.filters.cats.includes(c));
-    const nbOk = state.filters.nb.length===0 || state.filters.nb.includes(p.neighborhoodId);
-    return catOk && nbOk;
-  });
+  const filtered = filteredPlaces();
   const nbChips = [...new Set(state.places.map(p=>p.neighborhoodId))].map(id=>getNb(id)).filter(Boolean).sort((a,b)=>a.name.localeCompare(b.name));
   return `
     <div class="section-label">Karte</div>
@@ -830,7 +863,7 @@ function attachPlacesEvents(){
 let formTemp = null;
 function openPlaceForm(id){
   const existing = id ? state.places.find(p=>p.id===id) : null;
-  formTemp = existing ? JSON.parse(JSON.stringify(existing)) : {id:null,name:'',neighborhoodId:(getNb('ebisu')||state.neighborhoods[0]||{}).id,categoryIds:[],notes:'',done:false};
+  formTemp = existing ? JSON.parse(JSON.stringify(existing)) : {id:null,name:'',neighborhoodId:(getNb('ebisu')||state.neighborhoods[0]||{}).id,categoryIds:[],notes:'',address:'',lat:null,lng:null,done:false};
   const overlay = document.createElement('div');
   overlay.className = 'overlay'; overlay.id = 'formOverlay';
   overlay.innerHTML = `
@@ -852,12 +885,35 @@ function openPlaceForm(id){
         <div class="inline-add"><input type="text" id="pf-newcat" placeholder="Neue Kategorie…"><button id="pf-addcat">+</button></div>
       </div>
       <div class="field"><label>Notizen</label><textarea id="pf-notes" placeholder="Tipps, Öffnungszeiten, Links…">${esc(formTemp.notes)}</textarea></div>
+      <div class="field">
+        <label>Adresse (optional, für genauen Karten-Pin)</label>
+        <div class="inline-add"><input type="text" id="pf-address" value="${esc(formTemp.address||'')}" placeholder="z.B. Name + Straße, Stadtteil"><button id="pf-geocode">📍</button></div>
+        <div id="pf-geocode-status" style="font-size:11px;color:var(--text-dim);margin-top:4px;">${formTemp.lat!=null?'Position gespeichert – erscheint als eigener Pin auf der Karte.':''}</div>
+      </div>
       <div class="sheet-actions"><button class="btn-ghost" id="pf-cancel">Abbrechen</button><button class="btn-primary" id="pf-save">Speichern</button></div>
     </div>
   `;
   document.body.appendChild(overlay);
   document.getElementById('pf-name').oninput = e=> formTemp.name = e.target.value;
   document.getElementById('pf-notes').oninput = e=> formTemp.notes = e.target.value;
+  document.getElementById('pf-address').oninput = e=>{ formTemp.address = e.target.value; formTemp.lat = null; formTemp.lng = null; };
+  document.getElementById('pf-geocode').onclick = async ()=>{
+    const btn = document.getElementById('pf-geocode');
+    const statusEl = document.getElementById('pf-geocode-status');
+    const address = document.getElementById('pf-address').value.trim();
+    if(!address){ statusEl.textContent = 'Bitte zuerst eine Adresse eingeben.'; return; }
+    btn.textContent = '…'; btn.disabled = true;
+    const nb = getNb(formTemp.neighborhoodId);
+    const result = await geocodeQuery(`${address}, ${nb?nb.name+', ':''}Japan`);
+    btn.textContent = '📍'; btn.disabled = false;
+    if(result){
+      formTemp.lat = result.lat; formTemp.lng = result.lng;
+      statusEl.textContent = 'Position gefunden – erscheint als eigener Pin auf der Karte.';
+    } else {
+      formTemp.lat = null; formTemp.lng = null;
+      statusEl.textContent = 'Keine Position gefunden – Ort erscheint nur über den Stadtteil auf der Karte.';
+    }
+  };
   overlay.querySelectorAll('[data-nbpick]').forEach(el=>{
     el.onclick = ()=>{ formTemp.neighborhoodId = el.dataset.nbpick; overlay.querySelectorAll('[data-nbpick]').forEach(x=>x.classList.toggle('picked', x.dataset.nbpick===formTemp.neighborhoodId)); };
   });
@@ -869,12 +925,8 @@ function openPlaceForm(id){
     const input = document.getElementById('pf-newnb'); const name = input.value.trim(); if(!name) return;
     const keepName = document.getElementById('pf-name').value, keepNotes = document.getElementById('pf-notes').value;
     btn.textContent = '…'; btn.disabled = true;
-    let lat=null, lng=null;
-    try{
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(name+', Tokyo, Japan')}`);
-      const data = await res.json();
-      if(data && data[0]){ lat = parseFloat(data[0].lat); lng = parseFloat(data[0].lon); }
-    }catch(e){ console.error('Geocoding fehlgeschlagen', e); }
+    const geocoded = await geocodeQuery(`${name}, Tokyo, Japan`);
+    const lat = geocoded?geocoded.lat:null, lng = geocoded?geocoded.lng:null;
     const newNb = {id:uid(), name, lat, lng};
     state.neighborhoods.push(newNb); scheduleSave();
     if(lat==null) alert(`"${name}" wurde hinzugefügt, aber die Position konnte nicht gefunden werden – erscheint nur in der Liste, nicht auf der Karte.`);
