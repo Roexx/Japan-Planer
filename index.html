@@ -475,7 +475,7 @@ function attachOverviewEvents(){
   const googleKeyInput = document.getElementById('googleKeyInput');
   if(googleKeyInput) googleKeyInput.addEventListener('input', ()=>{ mutateSilent(s=>{ if(!s.settings) s.settings={}; s.settings.googleMapsKey = googleKeyInput.value.trim(); }); });
   const githubTokenInput = document.getElementById('githubTokenInput');
-  if(githubTokenInput) githubTokenInput.addEventListener('input', ()=>{ mutateSilent(s=>{ if(!s.settings) s.settings={}; s.settings.githubToken = githubTokenInput.value.trim(); }); });
+  if(githubTokenInput) githubTokenInput.addEventListener('input', ()=>{ mutateSilent(s=>{ if(!s.settings) s.settings={}; s.settings.githubToken = githubTokenInput.value.replace(/\s+/g,''); }); });
   const syncNowBtn = document.getElementById('syncNowBtn');
   if(syncNowBtn) syncNowBtn.onclick = async ()=>{
     if(!state.settings.githubToken){ setSyncStatus('Bitte zuerst einen GitHub-Token eintragen.'); return; }
