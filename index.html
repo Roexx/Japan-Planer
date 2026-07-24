@@ -261,7 +261,11 @@ async function gistRequest(method, path, body){
     headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' },
     body: body ? JSON.stringify(body) : undefined
   });
-  if(!res.ok) throw new Error(`GitHub API ${res.status}`);
+  if(!res.ok){
+    let msg = `GitHub API ${res.status}`;
+    try{ const errBody = await res.json(); if(errBody && errBody.message) msg += `: ${errBody.message}`; }catch(e){}
+    throw new Error(msg);
+  }
   return res.json();
 }
 
@@ -447,7 +451,7 @@ function renderOverview(){
     <div class="card">
       <div class="field">
         <label>GitHub Personal Access Token (Scope: gist)</label>
-        <input type="text" id="githubTokenInput" value="${esc(state.settings.githubToken||'')}" placeholder="ghp_...">
+        <input type="text" id="githubTokenInput" value="${esc(state.settings.githubToken||'')}" placeholder="ghp_..." autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false">
       </div>
       <div style="font-size:11px;color:var(--text-dim);line-height:1.5;">
         Erstellen unter <a href="https://github.com/settings/tokens/new?scopes=gist&description=Tokyo%20Trip%20Companion" target="_blank" rel="noopener" style="color:var(--accent);">github.com/settings/tokens/new</a> (nur Häkchen bei "gist" setzen). Speichert deine Reisedaten in einem privaten Gist und gleicht sie automatisch ab, sobald du auf einem Gerät etwas änderst bzw. die App auf einem anderen Gerät öffnest.
