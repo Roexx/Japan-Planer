@@ -211,7 +211,7 @@ function defaultState(){
     neighborhoods: [],
     places: [],
     filters:{cats:[], nb:[]},
-    settings:{ maptilerKey:'', googleMapsKey:'' },
+    settings:{ maptilerKey:'', googleMapsKey:'', githubToken:'', gistId:'' },
     activeTab:'overview'
   };
 }
@@ -246,7 +246,79 @@ function scheduleSave(){
     try{ await storageAdapter.set('trip-state', JSON.stringify(state)); }
     catch(e){ console.error('Speichern fehlgeschlagen', e); }
   }, 250);
+  scheduleGistPush();
 }
+
+function setSyncStatus(text){
+  const el = document.getElementById('syncStatus');
+  if(el) el.textContent = text;
+}
+
+async function gistRequest(method, path, body){
+  const token = state.settings && state.settings.githubToken;
+  const res = await fetch(`https://api.github.com/gists${path}`, {
+    method,
+    headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if(!res.ok) throw new Error(`GitHub API ${res.status}`);
+  return res.json();
+}
+
+let gistSyncTimer = null;
+let gistSyncing = false;
+function scheduleGistPush(){
+  if(!state.settings || !state.settings.githubToken) return;
+  clearTimeout(gistSyncTimer);
+  gistSyncTimer = setTimeout(pushToGist, 1500);
+}
+
+async function pushToGist(){
+  if(gistSyncing) return;
+  const token = state.settings && state.settings.githubToken;
+  if(!token) return;
+  gistSyncing = true;
+  try{
+    const content = JSON.stringify(state, null, 2);
+    if(!state.settings.gistId){
+      const created = await gistRequest('POST', '', {
+        description: 'Tokyo Trip Companion – Reisedaten (privat)',
+        public: false,
+        files: { 'trip-state.json': { content } }
+      });
+      state.settings.gistId = created.id;
+      await storageAdapter.set('trip-state', JSON.stringify(state));
+    } else {
+      await gistRequest('PATCH', `/${state.settings.gistId}`, { files: { 'trip-state.json': { content } } });
+    }
+    setSyncStatus('Zuletzt synchronisiert: ' + new Date().toLocaleTimeString('de-DE'));
+  }catch(e){
+    console.error('Gist-Sync (Upload) fehlgeschlagen', e);
+    setSyncStatus('Upload fehlgeschlagen: ' + e.message);
+  }finally{
+    gistSyncing = false;
+  }
+}
+
+async function pullFromGist(silent){
+  const token = state.settings && state.settings.githubToken;
+  const gistId = state.settings && state.settings.gistId;
+  if(!token || !gistId) return;
+  try{
+    const data = await gistRequest('GET', `/${gistId}`);
+    const file = data.files && data.files['trip-state.json'];
+    if(!file || !file.content) return;
+    const remote = JSON.parse(file.content);
+    remote.settings = Object.assign({}, remote.settings, { githubToken:token, gistId });
+    Object.assign(state, remote);
+    render();
+    setSyncStatus('Zuletzt synchronisiert: ' + new Date().toLocaleTimeString('de-DE'));
+  }catch(e){
+    console.error('Gist-Sync (Download) fehlgeschlagen', e);
+    if(!silent) setSyncStatus('Download fehlgeschlagen: ' + e.message);
+  }
+}
+
 async function loadState(){
   try{
     const res = await storageAdapter.get('trip-state');
@@ -256,8 +328,11 @@ async function loadState(){
   if(!state.filters) state.filters = {cats:[],nb:[]};
   if(!state.settings) state.settings = { maptilerKey:'', googleMapsKey:'' };
   if(state.settings.googleMapsKey===undefined) state.settings.googleMapsKey = '';
+  if(state.settings.githubToken===undefined) state.settings.githubToken = '';
+  if(state.settings.gistId===undefined) state.settings.gistId = '';
   if(!state.activeTab) state.activeTab = 'overview';
   render();
+  if(state.settings.githubToken && state.settings.gistId) pullFromGist(true);
 }
 function mutate(fn){ fn(state); scheduleSave(); render(); }
 function mutateSilent(fn){ fn(state); scheduleSave(); }
@@ -368,6 +443,18 @@ function renderOverview(){
         Kostenlos &amp; ohne Kreditkarte auf <a href="https://cloud.maptiler.com/account/keys/" target="_blank" rel="noopener" style="color:var(--accent);">cloud.maptiler.com</a> registrieren. Wird nur genutzt, wenn kein Google-Key eingetragen ist. Ohne jeden Key läuft die Karte kostenlos über OpenStreetMap (japanische Kachel-Beschriftung).
       </div>
     </div>
+    <div class="section-label">Sync zwischen Geräten (GitHub Gist)</div>
+    <div class="card">
+      <div class="field">
+        <label>GitHub Personal Access Token (Scope: gist)</label>
+        <input type="text" id="githubTokenInput" value="${esc(state.settings.githubToken||'')}" placeholder="ghp_...">
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);line-height:1.5;">
+        Erstellen unter <a href="https://github.com/settings/tokens/new?scopes=gist&description=Tokyo%20Trip%20Companion" target="_blank" rel="noopener" style="color:var(--accent);">github.com/settings/tokens/new</a> (nur Häkchen bei "gist" setzen). Speichert deine Reisedaten in einem privaten Gist und gleicht sie automatisch ab, sobald du auf einem Gerät etwas änderst bzw. die App auf einem anderen Gerät öffnest.
+      </div>
+      <div id="syncStatus" style="font-size:11px;color:var(--text-dim);margin-top:8px;">${state.settings.gistId? 'Verbunden – Gist-ID '+esc(state.settings.gistId) : 'Noch nicht synchronisiert.'}</div>
+      <button class="reset-link" id="syncNowBtn" style="margin-top:10px;">Jetzt synchronisieren</button>
+    </div>
     <button class="reset-link" id="exportBtn" style="margin-right:16px;">Daten sichern (exportieren)</button>
     <button class="reset-link" id="importBtn" style="margin-right:16px;">Daten wiederherstellen (importieren)</button>
     <button class="reset-link" id="resetBtn">Alle App-Daten zurücksetzen</button>
@@ -383,6 +470,16 @@ function attachOverviewEvents(){
   if(keyInput) keyInput.addEventListener('input', ()=>{ mutateSilent(s=>{ if(!s.settings) s.settings={}; s.settings.maptilerKey = keyInput.value.trim(); }); });
   const googleKeyInput = document.getElementById('googleKeyInput');
   if(googleKeyInput) googleKeyInput.addEventListener('input', ()=>{ mutateSilent(s=>{ if(!s.settings) s.settings={}; s.settings.googleMapsKey = googleKeyInput.value.trim(); }); });
+  const githubTokenInput = document.getElementById('githubTokenInput');
+  if(githubTokenInput) githubTokenInput.addEventListener('input', ()=>{ mutateSilent(s=>{ if(!s.settings) s.settings={}; s.settings.githubToken = githubTokenInput.value.trim(); }); });
+  const syncNowBtn = document.getElementById('syncNowBtn');
+  if(syncNowBtn) syncNowBtn.onclick = async ()=>{
+    if(!state.settings.githubToken){ setSyncStatus('Bitte zuerst einen GitHub-Token eintragen.'); return; }
+    setSyncStatus('Synchronisiere…');
+    await pullFromGist(false);
+    await pushToGist();
+    render();
+  };
   const resetBtn = document.getElementById('resetBtn');
   if(resetBtn) resetBtn.onclick = ()=>{
     if(confirm('Wirklich alle Daten zurücksetzen? Das kann nicht rückgängig gemacht werden.')){
