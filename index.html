@@ -530,7 +530,7 @@ function loadGoogleMaps(key){
   googleMapsLoadPromise = new Promise((resolve, reject)=>{
     window.__initGoogleMapsCb = ()=> resolve();
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&language=de&region=JP&callback=__initGoogleMapsCb`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&language=de&region=JP&libraries=places&callback=__initGoogleMapsCb`;
     script.async = true;
     script.onerror = ()=>{ googleMapsLoadPromise = null; reject(new Error('Google Maps Skript konnte nicht geladen werden')); };
     document.head.appendChild(script);
@@ -662,7 +662,20 @@ function initGoogleMap(){
     streetViewControl: false,
     mapTypeControl: false
   });
-  mapInstance.addListener('click', (e)=> openPlaceForm(null, { lat:e.latLng.lat(), lng:e.latLng.lng() }));
+  mapInstance.addListener('click', (e)=>{
+    if(e.placeId){
+      e.stop();
+      new google.maps.places.PlacesService(mapInstance).getDetails({ placeId:e.placeId, fields:['name','geometry'] }, (place, status)=>{
+        if(status==='OK' && place && place.geometry && place.geometry.location){
+          openPlaceForm(null, { lat: place.geometry.location.lat(), lng: place.geometry.location.lng(), name: place.name });
+        } else {
+          openPlaceForm(null, { lat:e.latLng.lat(), lng:e.latLng.lng() });
+        }
+      });
+      return;
+    }
+    openPlaceForm(null, { lat:e.latLng.lat(), lng:e.latLng.lng() });
+  });
 
   const activeNbIds = new Set(state.places.filter(p=>{
     if(state.filters.cats.length===0) return true;
@@ -968,7 +981,7 @@ let formTemp = null;
 function openPlaceForm(id, presetCoords){
   const existing = id ? state.places.find(p=>p.id===id) : null;
   formTemp = existing ? JSON.parse(JSON.stringify(existing)) : {
-    id:null, name:'',
+    id:null, name: (presetCoords && presetCoords.name) ? presetCoords.name : '',
     neighborhoodId:(getNb('ebisu')||state.neighborhoods[0]||{}).id,
     categoryIds:[], notes:'',
     address: presetCoords ? `${presetCoords.lat.toFixed(6)}, ${presetCoords.lng.toFixed(6)}` : '',
