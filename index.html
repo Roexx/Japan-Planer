@@ -739,7 +739,9 @@ function initGoogleMap(){
     if(!pos) return;
     new google.maps.Marker({
       position:{lat:pos.lat, lng:pos.lng}, map:mapInstance, title:p.name,
-      icon: pos.approx ? { path: google.maps.SymbolPath.CIRCLE, scale:5, fillColor:'#a78bfa', fillOpacity:0.4, strokeColor:'#a78bfa', strokeWeight:1.5 } : undefined
+      icon: pos.approx
+        ? { path: google.maps.SymbolPath.CIRCLE, scale:5, fillColor:'#a78bfa', fillOpacity:0.4, strokeColor:'#a78bfa', strokeWeight:1.5 }
+        : { path: google.maps.SymbolPath.CIRCLE, scale:7, fillColor:'#a78bfa', fillOpacity:0.95, strokeColor:'#eef0f6', strokeWeight:2 }
     });
   });
 
