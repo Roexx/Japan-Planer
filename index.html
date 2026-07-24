@@ -662,6 +662,7 @@ function initGoogleMap(){
     streetViewControl: false,
     mapTypeControl: false
   });
+  mapInstance.addListener('click', (e)=> openPlaceForm(null, { lat:e.latLng.lat(), lng:e.latLng.lng() }));
 
   const activeNbIds = new Set(state.places.filter(p=>{
     if(state.filters.cats.length===0) return true;
@@ -753,6 +754,7 @@ function initLeafletFallback(){
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom:19, attribution:'&copy; OpenStreetMap contributors'
   }).addTo(mapInstance);
+  mapInstance.on('click', (e)=> openPlaceForm(null, { lat:e.latlng.lat, lng:e.latlng.lng }));
 
   const activeNbIds = new Set(state.places.filter(p=>{
     if(state.filters.cats.length===0) return true;
@@ -768,7 +770,8 @@ function initLeafletFallback(){
     } else {
       marker.bindTooltip(nb.name, { direction:'top' });
     }
-    marker.on('click', ()=>{
+    marker.on('click', (e)=>{
+      L.DomEvent.stopPropagation(e);
       const idx = state.filters.nb.indexOf(nb.id);
       if(idx>-1) state.filters.nb.splice(idx,1); else state.filters.nb.push(nb.id);
       scheduleSave(); render();
@@ -783,6 +786,7 @@ function initLeafletFallback(){
       : { radius:6, color:'#eef0f6', weight:2, fillColor:'#a78bfa', fillOpacity:0.95 };
     L.circleMarker([pos.lat, pos.lng], style)
       .addTo(mapInstance)
+      .on('click', L.DomEvent.stopPropagation)
       .bindTooltip(esc(p.name), { permanent:!pos.approx, direction:'right', offset:[6,0], className:'map-label' });
   });
 }
@@ -825,6 +829,7 @@ function initMaptilerMap(key){
     navigationControl: true,
     geolocateControl: false
   });
+  mapInstance.on('click', (e)=> openPlaceForm(null, { lat:e.lngLat.lat, lng:e.lngLat.lng }));
 
   const activeNbIds = new Set(state.places.filter(p=>{
     if(state.filters.cats.length===0) return true;
@@ -850,7 +855,8 @@ function initMaptilerMap(key){
         wrap.title = nb.name;
       }
       const marker = new maptilersdk.Marker({ element:wrap, anchor:'center' }).setLngLat([nb.lng, nb.lat]).addTo(mapInstance);
-      wrap.addEventListener('click', ()=>{
+      wrap.addEventListener('click', (e)=>{
+        e.stopPropagation();
         const idx = state.filters.nb.indexOf(nb.id);
         if(idx>-1) state.filters.nb.splice(idx,1); else state.filters.nb.push(nb.id);
         scheduleSave(); render();
@@ -863,6 +869,7 @@ function initMaptilerMap(key){
       if(pos.approx){
         const dot = document.createElement('div');
         dot.style.cssText = 'width:10px;height:10px;border-radius:50%;background:rgba(167,139,250,0.35);border:1.5px solid #a78bfa;';
+        dot.addEventListener('click', e=>e.stopPropagation());
         new maptilersdk.Marker({ element:dot, anchor:'center' })
           .setLngLat([pos.lng, pos.lat])
           .setPopup(new maptilersdk.Popup({ offset:10 }).setText(p.name))
@@ -882,7 +889,7 @@ function renderPlaces(){
   return `
     <div class="section-label">Karte</div>
     <div class="map-wrap"><div id="leafletMap"></div></div>
-    <div class="map-hint">Tippen &amp; ziehen zum Verschieben, Pinch/+/– zum Zoomen. Marker antippen filtert die Liste.</div>
+    <div class="map-hint">Tippen &amp; ziehen zum Verschieben, Pinch/+/– zum Zoomen. Marker antippen filtert die Liste, freie Stelle antippen legt dort einen neuen Ort an.</div>
     <div class="section-label">Kategorien</div>
     <div class="chip-row" id="catChips">
       ${state.filters.cats.length>0 ? `<div class="chip reset" data-reset="cats">Zurücksetzen</div>` : ''}
@@ -958,9 +965,17 @@ function attachPlacesEvents(){
 }
 
 let formTemp = null;
-function openPlaceForm(id){
+function openPlaceForm(id, presetCoords){
   const existing = id ? state.places.find(p=>p.id===id) : null;
-  formTemp = existing ? JSON.parse(JSON.stringify(existing)) : {id:null,name:'',neighborhoodId:(getNb('ebisu')||state.neighborhoods[0]||{}).id,categoryIds:[],notes:'',address:'',lat:null,lng:null,done:false};
+  formTemp = existing ? JSON.parse(JSON.stringify(existing)) : {
+    id:null, name:'',
+    neighborhoodId:(getNb('ebisu')||state.neighborhoods[0]||{}).id,
+    categoryIds:[], notes:'',
+    address: presetCoords ? `${presetCoords.lat.toFixed(6)}, ${presetCoords.lng.toFixed(6)}` : '',
+    lat: presetCoords ? presetCoords.lat : null,
+    lng: presetCoords ? presetCoords.lng : null,
+    done:false
+  };
   const overlay = document.createElement('div');
   overlay.className = 'overlay'; overlay.id = 'formOverlay';
   overlay.innerHTML = `
@@ -1017,6 +1032,16 @@ function openPlaceForm(id){
       statusEl.textContent = 'Position gefunden – Stadtteil konnte nicht automatisch ermittelt werden, bitte manuell auswählen.';
     }
   };
+  if(presetCoords && !existing){
+    document.getElementById('pf-geocode-status').textContent = 'Position vom Kartenklick übernommen, ermittle Stadtteil…';
+    resolveNeighborhoodForCoords(presetCoords.lat, presetCoords.lng).then(nbResult=>{
+      if(nbResult){
+        formTemp.neighborhoodId = nbResult.nb.id;
+        refreshNbPicker();
+        document.getElementById('pf-geocode-status').textContent = `Position vom Kartenklick übernommen – Stadtteil "${nbResult.nb.name}"${nbResult.created?' (neu angelegt)':''} zugewiesen.`;
+      }
+    });
+  }
   document.getElementById('pf-geocode').onclick = async ()=>{
     const btn = document.getElementById('pf-geocode');
     const statusEl = document.getElementById('pf-geocode-status');
