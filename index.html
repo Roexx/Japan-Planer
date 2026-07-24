@@ -947,7 +947,7 @@ function renderPlaces(){
       `).join('')}
       <div class="chip" id="addCatChip" style="border-style:dashed;">+ Kategorie</div>
     </div>
-    <div class="section-label">Stadtteile</div>
+    <div class="section-label">Stadtteile <span class="reset-link" id="manageNbBtn" style="margin-top:0;">Verwalten</span></div>
     <div class="chip-row" id="nbChips">
       ${state.filters.nb.length>0 ? `<div class="chip reset" data-reset="nb">Zurücksetzen</div>` : ''}
       ${nbChips.map(nb=>`<div class="chip ${state.filters.nb.includes(nb.id)?'active':''}" data-nbchip="${nb.id}">${esc(nb.name)}</div>`).join('')}
@@ -996,6 +996,8 @@ function attachPlacesEvents(){
     const name = prompt('Name der neuen Kategorie:');
     if(name && name.trim()){ mutate(s=>{ const color = CAT_COLORS[s.categories.length % CAT_COLORS.length]; s.categories.push({id:uid(), name:name.trim(), color}); }); }
   };
+  const manageNbBtn = document.getElementById('manageNbBtn');
+  if(manageNbBtn) manageNbBtn.onclick = openNeighborhoodManager;
   document.querySelectorAll('[data-action="toggle-place"]').forEach(el=>{
     el.onclick = ()=>{ const id = el.dataset.id; mutate(s=>{ const p = s.places.find(x=>x.id===id); if(p) p.done = !p.done; }); };
   });
@@ -1160,6 +1162,59 @@ function openPlaceForm(id, presetCoords){
     overlay.remove();
   };
 }
+
+function openNeighborhoodManager(){
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay'; overlay.id = 'nbManagerOverlay';
+  const renderRows = ()=> state.neighborhoods.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(nb=>{
+    const count = state.places.filter(p=>p.neighborhoodId===nb.id).length;
+    return `
+      <div class="card" data-nbrow="${nb.id}" style="padding:10px;margin-bottom:8px;">
+        <div class="field"><label>Name</label><input type="text" data-nbfield="name" value="${esc(nb.name)}"></div>
+        <div style="display:flex;gap:8px;">
+          <div class="field" style="flex:1"><label>Lat</label><input type="text" data-nbfield="lat" value="${nb.lat!=null?nb.lat:''}"></div>
+          <div class="field" style="flex:1"><label>Lng</label><input type="text" data-nbfield="lng" value="${nb.lng!=null?nb.lng:''}"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+          <div style="font-size:11px;color:var(--text-dim);">${count} Ort${count===1?'':'e'} zugewiesen${nb.id==='ebisu'?' · Unterkunft':''}</div>
+          <button class="reset-link" data-nbdelete="${nb.id}" style="margin-top:0;color:var(--cat-jdm);">Löschen</button>
+        </div>
+      </div>
+    `;
+  }).join('') || '<div class="empty-state">Noch keine Stadtteile.</div>';
+
+  overlay.innerHTML = `
+    <div class="sheet">
+      <h3>Stadtteile verwalten</h3>
+      <div id="nbManagerList">${renderRows()}</div>
+      <div class="sheet-actions"><button class="btn-primary" id="nbManager-close">Fertig</button></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.querySelectorAll('[data-nbrow]').forEach(row=>{
+    const nb = state.neighborhoods.find(n=>n.id===row.dataset.nbrow);
+    if(!nb) return;
+    row.querySelector('[data-nbfield="name"]').oninput = e=>{ nb.name = e.target.value; scheduleSave(); };
+    row.querySelector('[data-nbfield="lat"]').oninput = e=>{ const v = parseFloat(e.target.value); nb.lat = isNaN(v)?null:v; scheduleSave(); };
+    row.querySelector('[data-nbfield="lng"]').oninput = e=>{ const v = parseFloat(e.target.value); nb.lng = isNaN(v)?null:v; scheduleSave(); };
+  });
+  overlay.querySelectorAll('[data-nbdelete]').forEach(el=>{
+    el.onclick = ()=>{
+      const id = el.dataset.nbdelete;
+      const count = state.places.filter(p=>p.neighborhoodId===id).length;
+      const msg = count>0
+        ? `${count} Ort${count===1?'':'e'} ${count===1?'ist':'sind'} diesem Stadtteil zugewiesen und ${count===1?'wird':'werden'} danach ohne Stadtteil angezeigt. Trotzdem löschen?`
+        : 'Diesen Stadtteil löschen?';
+      if(!confirm(msg)) return;
+      mutate(s=>{ s.neighborhoods = s.neighborhoods.filter(n=>n.id!==id); });
+      overlay.remove();
+      openNeighborhoodManager();
+    };
+  });
+  document.getElementById('nbManager-close').onclick = ()=>{ overlay.remove(); render(); };
+}
+
 function esc(str){ if(str===undefined||str===null) return ''; return String(str).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 function attachTabEvents(){
   if(state.activeTab==='overview') attachOverviewEvents();
