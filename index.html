@@ -649,7 +649,12 @@ async function resolveNeighborhoodForCoords(lat, lng){
   if(!name) return null;
   let nb = state.neighborhoods.find(n=>n.name.toLowerCase()===name.toLowerCase());
   if(nb) return { nb, created:false };
-  nb = {id:uid(), name, lat, lng};
+  // Use the named area's own centroid (like the manual "Neuer Stadtteil" flow does),
+  // not the raw clicked point - otherwise e.g. a beach that reverse-geocodes to
+  // "Fujisawa" would place the whole "Fujisawa" dot on that beach instead of near
+  // where the city name actually sits on the map.
+  const centroid = await geocodeQuery(`${name}, Japan`);
+  nb = { id:uid(), name, lat: centroid?centroid.lat:lat, lng: centroid?centroid.lng:lng };
   state.neighborhoods.push(nb); scheduleSave();
   return { nb, created:true };
 }
