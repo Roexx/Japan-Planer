@@ -600,12 +600,14 @@ function filteredPlaces(){
   });
 }
 
-// Real lat/lng if geocoded. Otherwise, while its neighborhood is actively filtered,
-// fan it out around that neighborhood's dot (deterministic per place id) so filtering
-// by Stadtteil still shows every place on the map, not just the geocoded ones.
+// Only shown once a Stadtteil filter actively includes this place's neighborhood
+// (keeps the zoomed-out map from being cluttered with every geocoded place at once).
+// Real lat/lng if geocoded, otherwise fanned out around the neighborhood's dot
+// (deterministic per place id) so filtering still shows every place, not just the
+// geocoded ones.
 function placeMarkerPosition(p){
-  if(p.lat!=null && p.lng!=null) return { lat:p.lat, lng:p.lng, approx:false };
   if(!state.filters.nb.includes(p.neighborhoodId)) return null;
+  if(p.lat!=null && p.lng!=null) return { lat:p.lat, lng:p.lng, approx:false };
   const nb = getNb(p.neighborhoodId);
   if(!nb || nb.lat==null || nb.lng==null) return null;
   let hash=0; for(let i=0;i<p.id.length;i++) hash = (hash*31 + p.id.charCodeAt(i)) >>> 0;
