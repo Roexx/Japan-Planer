@@ -664,13 +664,21 @@ function initGoogleMap(){
   });
   mapInstance.addListener('click', (e)=>{
     if(e.placeId){
-      e.stop();
       new google.maps.places.PlacesService(mapInstance).getDetails({ placeId:e.placeId, fields:['name','geometry'] }, (place, status)=>{
-        if(status==='OK' && place && place.geometry && place.geometry.location){
-          openPlaceForm(null, { lat: place.geometry.location.lat(), lng: place.geometry.location.lng(), name: place.name });
-        } else {
-          openPlaceForm(null, { lat:e.latLng.lat(), lng:e.latLng.lng() });
-        }
+        if(status!=='OK' || !place || !place.geometry || !place.geometry.location) return;
+        const loc = place.geometry.location;
+        const infoWin = new google.maps.InfoWindow({
+          position: loc,
+          content: '<button id="poi-add-btn" style="background:#a78bfa;color:#12141c;border:none;border-radius:6px;padding:6px 12px;font-weight:700;font-size:14px;cursor:pointer;">+ Hinzufügen</button>'
+        });
+        infoWin.addListener('domready', ()=>{
+          const btn = document.getElementById('poi-add-btn');
+          if(btn) btn.onclick = ()=>{
+            infoWin.close();
+            openPlaceForm(null, { lat: loc.lat(), lng: loc.lng(), name: place.name });
+          };
+        });
+        infoWin.open(mapInstance);
       });
       return;
     }
