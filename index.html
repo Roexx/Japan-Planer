@@ -1174,7 +1174,9 @@ function openNeighborhoodManager(){
         <div style="display:flex;gap:8px;">
           <div class="field" style="flex:1"><label>Lat</label><input type="text" data-nbfield="lat" value="${nb.lat!=null?nb.lat:''}"></div>
           <div class="field" style="flex:1"><label>Lng</label><input type="text" data-nbfield="lng" value="${nb.lng!=null?nb.lng:''}"></div>
+          <button data-nbsearch="${nb.id}" style="align-self:flex-end;background:var(--surface-3);border:none;color:var(--text);border-radius:var(--radius-sm);padding:0 12px;cursor:pointer;font-size:16px;margin-bottom:1px;">🔍</button>
         </div>
+        <div data-nbsearchresults="${nb.id}" style="margin-top:6px;display:flex;flex-direction:column;gap:4px;"></div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
           <div style="font-size:11px;color:var(--text-dim);">${count} Ort${count===1?'':'e'} zugewiesen${nb.id==='ebisu'?' · Unterkunft':''}</div>
           <button class="reset-link" data-nbdelete="${nb.id}" style="margin-top:0;color:var(--cat-jdm);">Löschen</button>
@@ -1198,6 +1200,26 @@ function openNeighborhoodManager(){
     row.querySelector('[data-nbfield="name"]').oninput = e=>{ nb.name = e.target.value; scheduleSave(); };
     row.querySelector('[data-nbfield="lat"]').oninput = e=>{ const v = parseFloat(e.target.value); nb.lat = isNaN(v)?null:v; scheduleSave(); };
     row.querySelector('[data-nbfield="lng"]').oninput = e=>{ const v = parseFloat(e.target.value); nb.lng = isNaN(v)?null:v; scheduleSave(); };
+    const searchBtn = row.querySelector('[data-nbsearch]');
+    const resultsBox = row.querySelector('[data-nbsearchresults]');
+    searchBtn.onclick = async ()=>{
+      const query = row.querySelector('[data-nbfield="name"]').value.trim();
+      if(!query) return;
+      searchBtn.textContent = '…'; searchBtn.disabled = true;
+      const results = await geocodeSearch(query);
+      searchBtn.textContent = '🔍'; searchBtn.disabled = false;
+      if(!results.length){ resultsBox.innerHTML = '<div style="font-size:11px;color:var(--text-dim);">Keine Treffer gefunden.</div>'; return; }
+      resultsBox.innerHTML = results.map((r,i)=>`<div class="pick" data-nbresult="${i}" style="border-radius:var(--radius-sm);text-align:left;">${esc(r.label)}</div>`).join('');
+      resultsBox.querySelectorAll('[data-nbresult]').forEach(el=>{
+        el.onclick = ()=>{
+          const r = results[+el.dataset.nbresult];
+          nb.lat = r.lat; nb.lng = r.lng; scheduleSave();
+          row.querySelector('[data-nbfield="lat"]').value = r.lat;
+          row.querySelector('[data-nbfield="lng"]').value = r.lng;
+          resultsBox.innerHTML = '';
+        };
+      });
+    };
   });
   overlay.querySelectorAll('[data-nbdelete]').forEach(el=>{
     el.onclick = ()=>{
