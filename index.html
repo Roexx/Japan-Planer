@@ -678,7 +678,16 @@ function initGoogleMap(){
   mapInstance.addListener('click', (e)=>{
     if(e.placeId){
       new google.maps.places.PlacesService(mapInstance).getDetails({ placeId:e.placeId, fields:['name','geometry'] }, (place, status)=>{
-        if(status!=='OK' || !place || !place.geometry || !place.geometry.location) return;
+        if(status!=='OK' || !place || !place.geometry || !place.geometry.location){
+          console.error('Places-Details fehlgeschlagen:', status);
+          poiAddBtn.textContent = `+ Ort hinzufügen (Name nicht gefunden: ${status})`;
+          poiAddBtn.style.display = 'block';
+          poiAddBtn.onclick = ()=>{
+            poiAddBtn.style.display = 'none';
+            openPlaceForm(null, { lat:e.latLng.lat(), lng:e.latLng.lng() });
+          };
+          return;
+        }
         const loc = place.geometry.location;
         poiAddBtn.textContent = `+ "${place.name}" hinzufügen`;
         poiAddBtn.style.display = 'block';
