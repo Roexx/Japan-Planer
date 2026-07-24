@@ -456,6 +456,13 @@ function renderOverview(){
       <div style="font-size:11px;color:var(--text-dim);line-height:1.5;">
         Erstellen unter <a href="https://github.com/settings/tokens/new?scopes=gist&description=Tokyo%20Trip%20Companion" target="_blank" rel="noopener" style="color:var(--accent);">github.com/settings/tokens/new</a> (nur Häkchen bei "gist" setzen). Speichert deine Reisedaten in einem privaten Gist und gleicht sie automatisch ab, sobald du auf einem Gerät etwas änderst bzw. die App auf einem anderen Gerät öffnest.
       </div>
+      <div class="field" style="margin-top:10px;">
+        <label>Gist-ID (nur beim zweiten Gerät nötig)</label>
+        <input type="text" id="gistIdInput" value="${esc(state.settings.gistId||'')}" placeholder="Leer lassen = neuen Gist anlegen" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false">
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);line-height:1.5;">
+        Auf dem <b>ersten</b> Gerät leer lassen und "Jetzt synchronisieren" klicken – legt automatisch einen neuen Gist an und zeigt dessen ID unten an. Die ID dann hier auf jedem <b>weiteren</b> Gerät eintragen, bevor du dort zum ersten Mal synchronisierst – sonst legt jedes Gerät versehentlich seinen eigenen, getrennten Gist an.
+      </div>
       <div id="syncStatus" style="font-size:11px;color:var(--text-dim);margin-top:8px;">${state.settings.gistId? 'Verbunden – Gist-ID '+esc(state.settings.gistId) : 'Noch nicht synchronisiert.'}</div>
       <button class="reset-link" id="syncNowBtn" style="margin-top:10px;">Jetzt synchronisieren</button>
     </div>
@@ -476,6 +483,15 @@ function attachOverviewEvents(){
   if(googleKeyInput) googleKeyInput.addEventListener('input', ()=>{ mutateSilent(s=>{ if(!s.settings) s.settings={}; s.settings.googleMapsKey = googleKeyInput.value.trim(); }); });
   const githubTokenInput = document.getElementById('githubTokenInput');
   if(githubTokenInput) githubTokenInput.addEventListener('input', ()=>{ mutateSilent(s=>{ if(!s.settings) s.settings={}; s.settings.githubToken = githubTokenInput.value.replace(/\s+/g,''); }); });
+  const gistIdInput = document.getElementById('gistIdInput');
+  if(gistIdInput) gistIdInput.addEventListener('input', ()=>{
+    mutateSilent(s=>{
+      if(!s.settings) s.settings={};
+      const raw = gistIdInput.value.replace(/\s+/g,'');
+      const urlMatch = raw.match(/gist\.github\.com\/[^/]+\/([0-9a-f]+)/i);
+      s.settings.gistId = urlMatch ? urlMatch[1] : raw;
+    });
+  });
   const syncNowBtn = document.getElementById('syncNowBtn');
   if(syncNowBtn) syncNowBtn.onclick = async ()=>{
     if(!state.settings.githubToken){ setSyncStatus('Bitte zuerst einen GitHub-Token eintragen.'); return; }
