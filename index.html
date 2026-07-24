@@ -600,6 +600,20 @@ function filteredPlaces(){
   });
 }
 
+// Real lat/lng if geocoded. Otherwise, while its neighborhood is actively filtered,
+// fan it out around that neighborhood's dot (deterministic per place id) so filtering
+// by Stadtteil still shows every place on the map, not just the geocoded ones.
+function placeMarkerPosition(p){
+  if(p.lat!=null && p.lng!=null) return { lat:p.lat, lng:p.lng, approx:false };
+  if(!state.filters.nb.includes(p.neighborhoodId)) return null;
+  const nb = getNb(p.neighborhoodId);
+  if(!nb || nb.lat==null || nb.lng==null) return null;
+  let hash=0; for(let i=0;i<p.id.length;i++) hash = (hash*31 + p.id.charCodeAt(i)) >>> 0;
+  const angle = (hash%360) * Math.PI/180;
+  const dist = 0.002 + (hash%1000)/1000000;
+  return { lat: nb.lat + Math.cos(angle)*dist, lng: nb.lng + Math.sin(angle)*dist/Math.cos(nb.lat*Math.PI/180), approx:true };
+}
+
 function haversineKm(lat1, lng1, lat2, lng2){
   const R = 6371;
   const dLat = (lat2-lat1) * Math.PI/180;
@@ -659,7 +673,7 @@ function initGoogleMap(){
   state.neighborhoods.forEach(nb=>{
     if(nb.lat==null || nb.lng==null) return;
     const st = markerStyle(nb, activeNbIds);
-    const labelText = (st.hasContent||st.isHome) ? (st.isHome? nb.name+' (Unterkunft)' : nb.name) : null;
+    const labelText = (st.hasContent||st.isHome) && !st.dimmed ? (st.isHome? nb.name+' (Unterkunft)' : nb.name) : null;
     const marker = new google.maps.Marker({
       position: { lat:nb.lat, lng:nb.lng },
       map: mapInstance,
@@ -682,8 +696,12 @@ function initGoogleMap(){
   });
 
   filteredPlaces().forEach(p=>{
-    if(p.lat==null || p.lng==null) return;
-    new google.maps.Marker({ position:{lat:p.lat, lng:p.lng}, map:mapInstance, title:p.name });
+    const pos = placeMarkerPosition(p);
+    if(!pos) return;
+    new google.maps.Marker({
+      position:{lat:pos.lat, lng:pos.lng}, map:mapInstance, title:p.name,
+      icon: pos.approx ? { path: google.maps.SymbolPath.CIRCLE, scale:5, fillColor:'#a78bfa', fillOpacity:0.4, strokeColor:'#a78bfa', strokeWeight:1.5 } : undefined
+    });
   });
 
   const updateGoogleLabels = ()=>{
@@ -719,11 +737,14 @@ function markerStyle(nb, activeNbIds){
   const isSelected = state.filters.nb.includes(nb.id);
   const isHome = nb.id==='ebisu';
   const isMatch = activeNbIds.has(nb.id);
+  const nbFilterActive = state.filters.nb.length>0;
+  const dimmed = nbFilterActive && !isSelected && !isHome;
   let color='#5b5f78', fillColor='#2c3150', radius=hasContent?7:4;
+  if(isMatch && hasContent){ color='#a78bfa'; fillColor='rgba(167,139,250,0.35)'; }
+  if(dimmed){ color='#33364a'; fillColor='#1c1e2c'; radius=3; }
   if(isHome){ color='#e0374a'; fillColor='#e0374a'; radius=9; }
-  else if(isSelected){ color='#a78bfa'; fillColor='#a78bfa'; radius=9; }
-  else if(isMatch && hasContent){ color='#a78bfa'; fillColor='rgba(167,139,250,0.35)'; }
-  return { hasContent, isHome, color, fillColor, radius };
+  if(isSelected){ color='#a78bfa'; fillColor='#a78bfa'; radius=9; }
+  return { hasContent, isHome, dimmed, color, fillColor, radius };
 }
 
 function initLeafletFallback(){
@@ -742,7 +763,7 @@ function initLeafletFallback(){
     if(nb.lat==null || nb.lng==null) return;
     const st = markerStyle(nb, activeNbIds);
     const marker = L.circleMarker([nb.lat, nb.lng], { radius:st.radius, color:st.color, weight:2, fillColor:st.fillColor, fillOpacity:0.85 }).addTo(mapInstance);
-    if(st.hasContent || st.isHome){
+    if((st.hasContent || st.isHome) && !st.dimmed){
       marker.bindTooltip(st.isHome? nb.name+' (Unterkunft)' : nb.name, { permanent:true, direction:'top', offset:[0,-6], className:'map-label' });
     } else {
       marker.bindTooltip(nb.name, { direction:'top' });
@@ -755,10 +776,14 @@ function initLeafletFallback(){
   });
 
   filteredPlaces().forEach(p=>{
-    if(p.lat==null || p.lng==null) return;
-    L.circleMarker([p.lat, p.lng], { radius:6, color:'#eef0f6', weight:2, fillColor:'#a78bfa', fillOpacity:0.95 })
+    const pos = placeMarkerPosition(p);
+    if(!pos) return;
+    const style = pos.approx
+      ? { radius:5, color:'#a78bfa', weight:1.5, fillColor:'#a78bfa', fillOpacity:0.35 }
+      : { radius:6, color:'#eef0f6', weight:2, fillColor:'#a78bfa', fillOpacity:0.95 };
+    L.circleMarker([pos.lat, pos.lng], style)
       .addTo(mapInstance)
-      .bindTooltip(esc(p.name), { permanent:true, direction:'right', offset:[6,0], className:'map-label' });
+      .bindTooltip(esc(p.name), { permanent:!pos.approx, direction:'right', offset:[6,0], className:'map-label' });
   });
 }
 
@@ -816,7 +841,7 @@ function initMaptilerMap(key){
       const dot = document.createElement('div');
       dot.style.cssText = `width:${st.radius*2}px;height:${st.radius*2}px;border-radius:50%;background:${st.fillColor};border:2px solid ${st.color};box-shadow:0 1px 4px rgba(0,0,0,0.4);`;
       wrap.appendChild(dot);
-      if(st.hasContent || st.isHome){
+      if((st.hasContent || st.isHome) && !st.dimmed){
         const label = document.createElement('div');
         label.textContent = st.isHome ? nb.name+' (Unterkunft)' : nb.name;
         label.style.cssText = 'background:#1b1e2b;color:#eef0f6;border:1px solid #31364d;border-radius:6px;font-size:11px;font-weight:600;padding:2px 7px;white-space:nowrap;font-family:Inter,sans-serif;';
@@ -833,11 +858,21 @@ function initMaptilerMap(key){
     });
 
     filteredPlaces().forEach(p=>{
-      if(p.lat==null || p.lng==null) return;
-      new maptilersdk.Marker({ color:'#a78bfa' })
-        .setLngLat([p.lng, p.lat])
-        .setPopup(new maptilersdk.Popup({ offset:16 }).setText(p.name))
-        .addTo(mapInstance);
+      const pos = placeMarkerPosition(p);
+      if(!pos) return;
+      if(pos.approx){
+        const dot = document.createElement('div');
+        dot.style.cssText = 'width:10px;height:10px;border-radius:50%;background:rgba(167,139,250,0.35);border:1.5px solid #a78bfa;';
+        new maptilersdk.Marker({ element:dot, anchor:'center' })
+          .setLngLat([pos.lng, pos.lat])
+          .setPopup(new maptilersdk.Popup({ offset:10 }).setText(p.name))
+          .addTo(mapInstance);
+      } else {
+        new maptilersdk.Marker({ color:'#a78bfa' })
+          .setLngLat([pos.lng, pos.lat])
+          .setPopup(new maptilersdk.Popup({ offset:16 }).setText(p.name))
+          .addTo(mapInstance);
+      }
     });
   });
 }
